@@ -59,7 +59,7 @@ let editorState = {};
 const commands = [
   new SlashCommandBuilder()
     .setName("criar-produto")
-    .setDescription("Abrir editor visual"),
+    .setDescription("Abrir editor visual de produto"),
 
   new SlashCommandBuilder()
     .setName("listar-produtos")
@@ -75,7 +75,7 @@ const rest = new REST({ version: "10" }).setToken(config.token);
 /* ================= READY ================= */
 
 client.once("ready", async () => {
-  console.log("✅ Sistema Online");
+  console.log("✅ Sistema Premium Online");
 
   const guild = client.guilds.cache.first();
   if (!guild) return;
@@ -109,7 +109,7 @@ client.on("interactionCreate", async interaction => {
 
         editorState[interaction.user.id] = {
           nome: "Nome do Produto",
-          descricao: "Descrição do produto...",
+          descricao: "Descrição premium do produto...",
           preco: 0,
           estoque: 0,
           link: "https://link.com"
@@ -150,14 +150,7 @@ client.on("interactionCreate", async interaction => {
 
         for (const p of data.products) {
 
-          const embed = new EmbedBuilder()
-            .setTitle(`🛍 ${p.nome}`)
-            .setDescription(
-              `${p.descricao}\n\n` +
-              `💰 Valor: R$ ${formatar(p.preco)}\n` +
-              `📦 Estoque: ${p.estoque}`
-            )
-            .setColor("#00ff88");
+          const embed = gerarEmbedVisual(p);
 
           await interaction.channel.send({ embeds: [embed] });
         }
@@ -188,7 +181,7 @@ client.on("interactionCreate", async interaction => {
         delete editorState[userId];
 
         return interaction.update({
-          content: "✅ Produto salvo!",
+          content: "✅ Produto salvo com sucesso!",
           embeds: [],
           components: []
         });
@@ -232,9 +225,6 @@ client.on("interactionCreate", async interaction => {
       const campo = interaction.customId.replace("modal_", "");
       const valor = interaction.fields.getTextInputValue("valor_input");
 
-      if (!editorState[userId])
-        return interaction.reply({ content: "❌ Editor expirado.", ephemeral: true });
-
       editorState[userId][campo] =
         campo === "preco" || campo === "estoque"
           ? Number(valor)
@@ -248,31 +238,53 @@ client.on("interactionCreate", async interaction => {
     }
 
   } catch (err) {
-    console.error("ERRO GERAL:", err);
+    console.error("ERRO:", err);
     if (!interaction.replied)
       interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
   }
 
 });
 
-/* ================= AUX ================= */
+/* ================= EMBEDS ================= */
 
 function gerarEmbed(userId) {
 
   const p = editorState[userId];
 
   return new EmbedBuilder()
-    .setTitle("🛍 PREVIEW DO PRODUTO")
+    .setTitle(`🛍 ${p.nome.toUpperCase()}`)
     .setDescription(
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `📦 Nome: ${p.nome}\n\n` +
-      `📝 Descrição:\n${p.descricao}\n\n` +
-      `💰 Preço: R$ ${formatar(p.preco)}\n` +
-      `📦 Estoque: ${p.estoque}\n` +
-      `🔗 Link: ${p.link}\n` +
-      `━━━━━━━━━━━━━━━━━━`
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `✨ **PRODUTO PREMIUM**\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📦 **DESCRIÇÃO:**\n${p.descricao}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `💰 **VALOR:** R$ ${formatar(p.preco)}\n` +
+      `📦 **ESTOQUE:** ${p.estoque}\n` +
+      `🔗 **LINK:** ${p.link}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━`
     )
-    .setColor("#00ff88");
+    .setColor("#0f0f0f")
+    .setThumbnail("https://cdn-icons-png.flaticon.com/512/263/263142.png")
+    .setImage("https://i.imgur.com/8Km9tLL.png")
+    .setFooter({
+      text: "Awakening Store • Entrega automática • Compra segura",
+      iconURL: "https://cdn-icons-png.flaticon.com/512/891/891419.png"
+    })
+    .setTimestamp();
+}
+
+function gerarEmbedVisual(p) {
+
+  return new EmbedBuilder()
+    .setTitle(`🛍 ${p.nome}`)
+    .setDescription(
+      `${p.descricao}\n\n` +
+      `💰 Valor: R$ ${formatar(p.preco)}\n` +
+      `📦 Estoque: ${p.estoque}`
+    )
+    .setColor("#00ff88")
+    .setFooter({ text: "Awakening Store • Loja Profissional" });
 }
 
 function gerarBotoes() {
