@@ -1,9 +1,3 @@
-[
-  {
-    "id": "produto1",
-    "nome": "Pack Premium",
-    "preco": 0.50,
-    "estoque": 5,
-    "link": "https://seulink.com/download"
-  }
-]
+{
+  "products": []
+}

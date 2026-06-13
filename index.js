@@ -1,4 +1,15 @@
-import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} from "discord.js";
+
 import express from "express";
 import bodyParser from "body-parser";
 import fs from "fs";
@@ -10,17 +21,14 @@ const config = {
   mercadoPagoToken: process.env.MP_TOKEN,
   logChannelId: process.env.LOG_CHANNEL_ID
 };
-const products = JSON.parse(fs.readFileSync("./products.json"));
 
-/* ================= MERCADO PAGO ================= */
+const store = JSON.parse(fs.readFileSync("./store.json"));
+const productsFile = "./products.json";
 
 const mpClient = new MercadoPagoConfig({
   accessToken: config.mercadoPagoToken
 });
-
 const paymentClient = new Payment(mpClient);
-
-/* ================= DISCORD ================= */
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
@@ -28,55 +36,108 @@ const client = new Client({
 
 let pagamentos = {};
 
-/* ================= REGISTRAR COMANDOS ================= */
+function getProducts() {
+  return JSON.parse(fs.readFileSync(productsFile));
+}
+
+function saveProducts(data) {
+  fs.writeFileSync(productsFile, JSON.stringify(data, null, 2));
+}
+
+function isAdmin(member) {
+  return member.roles.cache.has(store.adminRoleId);
+}
+
+/* ================= COMANDOS ================= */
 
 const commands = [
   new SlashCommandBuilder()
-    .setName("loja")
-    .setDescription("Ver produtos disponíveis"),
+    .setName("criar-produto")
+    .setDescription("Criar novo produto")
+    .addStringOption(o => o.setName("nome").setDescription("Nome").setRequired(true))
+    .addNumberOption(o => o.setName("preco").setDescription("Preço").setRequired(true))
+    .addIntegerOption(o => o.setName("estoque").setDescription("Estoque").setRequired(true))
+    .addStringOption(o => o.setName("link").setDescription("Link").setRequired(true)),
 
   new SlashCommandBuilder()
-    .setName("comprar")
-    .setDescription("Comprar um produto")
-    .addStringOption(option =>
-      option.setName("id")
-        .setDescription("ID do produto")
-        .setRequired(true))
-].map(command => command.toJSON());
+    .setName("criar-painel")
+    .setDescription("Criar painel da loja")
+].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
 
 client.once("ready", async () => {
-  console.log(`✅ Awakening Store online como ${client.user.tag}`);
+  console.log(`✅ Online como ${client.user.tag}`);
 
   await rest.put(
     Routes.applicationCommands(config.clientId),
     { body: commands }
   );
-
-  console.log("✅ Comandos registrados.");
 });
 
-/* ================= COMANDOS ================= */
+/* ================= INTERAÇÕES ================= */
 
 client.on("interactionCreate", async interaction => {
-  if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === "loja") {
+  if (interaction.isChatInputCommand()) {
 
-    let mensagem = "🛒 **Awakening Store**\n\n";
+    if (!isAdmin(interaction.member))
+      return interaction.reply({ content: "❌ Você não tem permissão.", ephemeral: true });
 
-    products.forEach(prod => {
-      mensagem += `📦 **${prod.nome}**\n💰 R$${prod.preco}\n📦 Estoque: ${prod.estoque}\n🆔 ID: ${prod.id}\n\n`;
-    });
+    if (interaction.commandName === "criar-produto") {
 
-    await interaction.reply({ content: mensagem });
+      const data = getProducts();
+
+      const produto = {
+        id: Date.now().toString(),
+        nome: interaction.options.getString("nome"),
+        preco: interaction.options.getNumber("preco"),
+        estoque: interaction.options.getInteger("estoque"),
+        link: interaction.options.getString("link")
+      };
+
+      data.products.push(produto);
+      saveProducts(data);
+
+      return interaction.reply({ content: `✅ Produto ${produto.nome} criado!`, ephemeral: true });
+    }
+
+    if (interaction.commandName === "criar-painel") {
+
+      const data = getProducts();
+
+      if (data.products.length === 0)
+        return interaction.reply({ content: "❌ Nenhum produto cadastrado.", ephemeral: true });
+
+      const embed = new EmbedBuilder()
+        .setTitle(`🛒 ${store.storeName}`)
+        .setColor(store.embedColor)
+        .setDescription("Clique no botão para comprar.");
+
+      const row = new ActionRowBuilder();
+
+      data.products.forEach(prod => {
+        row.addComponents(
+          new ButtonBuilder()
+            .setCustomId(`buy_${prod.id}`)
+            .setLabel(prod.nome)
+            .setStyle(ButtonStyle.Success)
+        );
+      });
+
+      await interaction.channel.send({ embeds: [embed], components: [row] });
+
+      return interaction.reply({ content: "✅ Painel criado!", ephemeral: true });
+    }
   }
 
-  if (interaction.commandName === "comprar") {
+  /* ================= BOTÃO DE COMPRA ================= */
 
-    const id = interaction.options.getString("id");
-    const produto = products.find(p => p.id === id);
+  if (interaction.isButton()) {
+
+    const productId = interaction.customId.replace("buy_", "");
+    const data = getProducts();
+    const produto = data.products.find(p => p.id === productId);
 
     if (!produto)
       return interaction.reply({ content: "❌ Produto não encontrado.", ephemeral: true });
@@ -89,9 +150,7 @@ client.on("interactionCreate", async interaction => {
         transaction_amount: produto.preco,
         description: produto.nome,
         payment_method_id: "pix",
-        payer: {
-          email: "cliente@email.com"
-        }
+        payer: { email: "cliente@email.com" }
       }
     });
 
@@ -100,10 +159,10 @@ client.on("interactionCreate", async interaction => {
       produtoId: produto.id
     };
 
-    const qrCode = pagamento.point_of_interaction.transaction_data.qr_code;
+    const qr = pagamento.point_of_interaction.transaction_data.qr_code;
 
     await interaction.reply({
-      content: `💳 Pague via Pix:\n\`\`\`\n${qrCode}\n\`\`\`\n✅ Após o pagamento o produto será entregue automaticamente.`,
+      content: `💳 Pague via Pix:\n\`\`\`\n${qr}\n\`\`\`\n✅ Após o pagamento o produto será entregue automaticamente.`,
       ephemeral: true
     });
   }
@@ -126,16 +185,17 @@ app.post("/webhook", async (req, res) => {
     const info = pagamentos[paymentId];
     if (!info) return res.sendStatus(200);
 
-    const produto = products.find(p => p.id === info.produtoId);
+    const data = getProducts();
+    const produto = data.products.find(p => p.id === info.produtoId);
 
     produto.estoque -= 1;
-    fs.writeFileSync("./products.json", JSON.stringify(products, null, 2));
+    saveProducts(data);
 
     const user = await client.users.fetch(info.userId);
     await user.send(`✅ Pagamento aprovado!\nAqui está seu produto:\n${produto.link}`);
 
     const logChannel = await client.channels.fetch(config.logChannelId);
-    await logChannel.send(`💰 Nova venda!\n📦 Produto: ${produto.nome}\n👤 Cliente: <@${info.userId}>`);
+    await logChannel.send(`💰 Venda realizada!\nProduto: ${produto.nome}`);
 
     delete pagamentos[paymentId];
   }
@@ -143,8 +203,5 @@ app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
 });
 
-app.listen(3000, () => {
-  console.log("🌐 Webhook rodando na porta 3000");
-});
-
+app.listen(3000);
 client.login(config.token);
