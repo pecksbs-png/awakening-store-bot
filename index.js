@@ -10,7 +10,9 @@ import {
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle
+  TextInputStyle,
+  ChannelType,
+  PermissionsBitField
 } from "discord.js";
 
 import fs from "fs";
@@ -20,7 +22,7 @@ import fs from "fs";
 const config = {
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
-  adminRoleId: process.env.ADMIN_ROLE_ID
+  adminRoleId: process.env.ADMIN_ROLE_ID || null
 };
 
 const productsPath = "./data/products.json";
@@ -59,14 +61,21 @@ let editorState = {};
 const commands = [
   new SlashCommandBuilder()
     .setName("criar-produto")
-    .setDescription("Abrir editor visual de produto")
+    .setDescription("Abrir editor visual"),
+
+  new SlashCommandBuilder()
+    .setName("painel")
+    .setDescription("Criar painel da loja")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
 
 client.once("ready", async () => {
-  console.log("✅ Editor Visual Online");
-  await rest.put(Routes.applicationCommands(config.clientId), { body: commands });
+  console.log("✅ Sistema Integrado Online");
+  await rest.put(
+    Routes.applicationGuildCommands(config.clientId, client.guilds.cache.first().id),
+    { body: commands }
+  );
 });
 
 /* ================= INTERAÇÕES ================= */
@@ -75,26 +84,51 @@ client.on("interactionCreate", async interaction => {
 
   try {
 
-    /* ===== COMANDO ===== */
+    /* ===== COMANDOS ===== */
 
     if (interaction.isChatInputCommand()) {
 
-      if (!interaction.member.roles.cache.has(config.adminRoleId))
-        return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
+      await interaction.deferReply({ ephemeral: true });
 
-      editorState[interaction.user.id] = {
-        nome: "Nome do Produto",
-        descricao: "Descrição do produto...",
-        preco: 0,
-        estoque: 0,
-        link: "https://link.com"
-      };
+      if (interaction.commandName === "criar-produto") {
 
-      return interaction.reply({
-        embeds: [gerarEmbed(interaction.user.id)],
-        components: [gerarBotoes()],
-        ephemeral: true
-      });
+        editorState[interaction.user.id] = {
+          nome: "Nome do Produto",
+          descricao: "Descrição...",
+          preco: 0,
+          estoque: 0,
+          link: "https://link.com"
+        };
+
+        return interaction.editReply({
+          embeds: [gerarEmbed(interaction.user.id)],
+          components: [gerarBotoes()]
+        });
+      }
+
+      if (interaction.commandName === "painel") {
+
+        const data = getProducts();
+
+        if (!data.products.length)
+          return interaction.editReply({ content: "❌ Sem produtos." });
+
+        for (const p of data.products) {
+
+          const embed = new EmbedBuilder()
+            .setTitle(`🛍 ${p.nome}`)
+            .setDescription(
+              `${p.descricao}\n\n` +
+              `💰 Valor: R$ ${formatar(p.preco)}\n` +
+              `📦 Estoque: ${p.estoque}`
+            )
+            .setColor("#00ff88");
+
+          await interaction.channel.send({ embeds: [embed] });
+        }
+
+        return interaction.editReply({ content: "✅ Painel criado!" });
+      }
     }
 
     /* ===== BOTÕES ===== */
@@ -106,19 +140,9 @@ client.on("interactionCreate", async interaction => {
       if (!editorState[userId])
         return interaction.reply({ content: "❌ Editor expirado.", ephemeral: true });
 
-      if (interaction.customId === "cancelar") {
-        delete editorState[userId];
-        return interaction.update({
-          content: "❌ Produto cancelado.",
-          embeds: [],
-          components: []
-        });
-      }
-
       if (interaction.customId === "salvar") {
 
         const data = getProducts();
-
         data.products.push({
           id: Date.now().toString(),
           ...editorState[userId]
@@ -128,7 +152,7 @@ client.on("interactionCreate", async interaction => {
         delete editorState[userId];
 
         return interaction.update({
-          content: "✅ Produto salvo com sucesso!",
+          content: "✅ Produto salvo!",
           embeds: [],
           components: []
         });
@@ -143,34 +167,32 @@ client.on("interactionCreate", async interaction => {
       const input = new TextInputBuilder()
         .setCustomId("valor_input")
         .setLabel(`Novo ${campo}`)
+        .setStyle(
+          campo === "descricao"
+            ? TextInputStyle.Paragraph
+            : TextInputStyle.Short
+        )
         .setRequired(true);
 
-      if (campo === "descricao")
-        input.setStyle(TextInputStyle.Paragraph);
-      else
-        input.setStyle(TextInputStyle.Short);
-
       modal.addComponents(new ActionRowBuilder().addComponents(input));
-
       return interaction.showModal(modal);
     }
 
-    /* ===== RECEBER MODAL ===== */
+    /* ===== MODAL ===== */
 
     if (interaction.isModalSubmit()) {
 
       const userId = interaction.user.id;
+      const campo = interaction.customId.replace("modal_", "");
+      const valor = interaction.fields.getTextInputValue("valor_input");
 
       if (!editorState[userId])
         return interaction.reply({ content: "❌ Editor expirado.", ephemeral: true });
 
-      const campo = interaction.customId.replace("modal_", "");
-      const valor = interaction.fields.getTextInputValue("valor_input");
-
-      if (campo === "preco" || campo === "estoque")
-        editorState[userId][campo] = Number(valor);
-      else
-        editorState[userId][campo] = valor;
+      editorState[userId][campo] =
+        campo === "preco" || campo === "estoque"
+          ? Number(valor)
+          : valor;
 
       return interaction.reply({
         embeds: [gerarEmbed(userId)],
@@ -180,13 +202,14 @@ client.on("interactionCreate", async interaction => {
     }
 
   } catch (err) {
-    console.error("ERRO EDITOR:", err);
+    console.error("ERRO GERAL:", err);
     if (!interaction.replied)
       interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
   }
+
 });
 
-/* ================= AUXILIARES ================= */
+/* ================= AUX ================= */
 
 function gerarEmbed(userId) {
 
@@ -195,55 +218,23 @@ function gerarEmbed(userId) {
   return new EmbedBuilder()
     .setTitle("🛍 PREVIEW DO PRODUTO")
     .setDescription(
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `📦 **Nome:** ${p.nome}\n\n` +
-      `📝 **Descrição:**\n${p.descricao}\n\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `💰 **Preço:** R$ ${formatar(p.preco)}\n` +
-      `📦 **Estoque:** ${p.estoque}\n` +
-      `🔗 **Link:** ${p.link}\n` +
-      `━━━━━━━━━━━━━━━━━━`
+      `Nome: ${p.nome}\n\n` +
+      `Descrição:\n${p.descricao}\n\n` +
+      `Preço: R$ ${formatar(p.preco)}\n` +
+      `Estoque: ${p.estoque}\n` +
+      `Link: ${p.link}`
     )
     .setColor("#00ff88");
 }
 
 function gerarBotoes() {
-
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("editar_nome")
-      .setLabel("✏️ Nome")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("editar_descricao")
-      .setLabel("📝 Descrição")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("editar_preco")
-      .setLabel("💰 Preço")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("editar_estoque")
-      .setLabel("📦 Estoque")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("editar_link")
-      .setLabel("🔗 Link")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("salvar")
-      .setLabel("✅ Salvar")
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId("cancelar")
-      .setLabel("❌ Cancelar")
-      .setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId("editar_nome").setLabel("Nome").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("editar_descricao").setLabel("Descrição").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("editar_preco").setLabel("Preço").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("editar_estoque").setLabel("Estoque").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("editar_link").setLabel("Link").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("salvar").setLabel("Salvar").setStyle(ButtonStyle.Success)
   );
 }
 
