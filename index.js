@@ -100,7 +100,7 @@ client.once("ready", async () => {
 
 client.on("interactionCreate", async interaction => {
 
-  /* ========= COMANDOS ========= */
+  /* ========= COMANDO CRIAR PRODUTO ========= */
 
   if (interaction.isChatInputCommand()) {
 
@@ -125,6 +125,8 @@ client.on("interactionCreate", async interaction => {
 
       return interaction.reply({ content: "✅ Produto criado!", ephemeral: true });
     }
+
+    /* ========= PAINEL ========= */
 
     if (interaction.commandName === "painel") {
 
@@ -247,39 +249,29 @@ client.on("interactionCreate", async interaction => {
 
     await interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
   }
-});
 
-/* ================= WEBHOOK ================= */
+  /* ========= ALTERAR QUANTIDADE ========= */
 
-const app = express();
-app.use(bodyParser.json());
+  if (interaction.isStringSelectMenu() && interaction.customId === "quantidade") {
 
-app.post("/webhook", async (req, res) => {
-
-  const paymentId = req.body?.data?.id;
-  if (!paymentId) return res.sendStatus(200);
-
-  const pagamentoInfo = await paymentClient.get({ id: paymentId });
-
-  if (pagamentoInfo.status === "approved") {
-
-    const info = pagamentos[paymentId];
-    if (!info) return res.sendStatus(200);
-
+    const carrinho = carrinhos[interaction.channel.id];
     const data = getProducts();
-    const produto = data.products.find(p => p.id === info.produtoId);
+    const produto = data.products.find(p => p.id === carrinho.produtoId);
 
-    produto.estoque -= info.quantidade;
-    saveProducts(data);
+    carrinho.quantidade = parseInt(interaction.values[0]);
 
-    const user = await client.users.fetch(info.userId);
-    await user.send(`✅ Pagamento aprovado!\nAqui está seu produto:\n${produto.link}`);
+    const total = produto.preco * carrinho.quantidade;
 
-    delete pagamentos[paymentId];
+    const embed = new EmbedBuilder()
+      .setTitle("🛍 Confirme sua Compra")
+      .setDescription(
+        `📦 Produto: **${produto.nome}**\n\n` +
+        `📦 Quantidade: ${carrinho.quantidade}\n` +
+        `💰 Total: R$${formatarValor(total)}`
+      )
+      .setColor("#00ff88");
+
+    await interaction.update({ embeds: [embed] });
   }
 
-  res.sendStatus(200);
 });
-
-app.listen(3000);
-client.login(config.token);
