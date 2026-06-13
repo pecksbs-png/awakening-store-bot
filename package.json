@@ -1,0 +1,17 @@
+{
+  "name": "awakening-store-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "discord.js": "^14.26.4",
+    "express": "^5.2.1",
+    "mercadopago": "^3.1.0",
+    "uuid": "^14.0.0"
+  }
+}
