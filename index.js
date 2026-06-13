@@ -8,9 +8,8 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ModalBuilder,
-  TextInputBuilder,
-  TextInputStyle
+  ChannelType,
+  PermissionsBitField
 } from "discord.js";
 
 import fs from "fs";
@@ -20,7 +19,8 @@ import fs from "fs";
 const config = {
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
-  adminRoleId: process.env.ADMIN_ROLE_ID
+  adminRoleId: process.env.ADMIN_ROLE_ID,
+  ticketCategoryId: process.env.TICKET_CATEGORY_ID
 };
 
 const productsPath = "./data/products.json";
@@ -59,15 +59,15 @@ let editorState = {};
 const commands = [
   new SlashCommandBuilder()
     .setName("criar-produto")
-    .setDescription("Abrir editor visual de produto"),
+    .setDescription("Criar produto"),
 
   new SlashCommandBuilder()
     .setName("listar-produtos")
-    .setDescription("Listar produtos cadastrados"),
+    .setDescription("Listar produtos"),
 
   new SlashCommandBuilder()
     .setName("painel")
-    .setDescription("Criar painel da loja")
+    .setDescription("Criar painel")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
@@ -75,7 +75,7 @@ const rest = new REST({ version: "10" }).setToken(config.token);
 /* ================= READY ================= */
 
 client.once("ready", async () => {
-  console.log("✅ Sistema Premium Online");
+  console.log("✅ Loja Premium Online");
 
   const guild = client.guilds.cache.first();
   if (!guild) return;
@@ -85,7 +85,7 @@ client.once("ready", async () => {
     { body: commands }
   );
 
-  console.log("✅ Comandos registrados corretamente");
+  console.log("✅ Comandos registrados");
 });
 
 /* ================= INTERAÇÕES ================= */
@@ -94,8 +94,6 @@ client.on("interactionCreate", async interaction => {
 
   try {
 
-    /* ===== COMANDOS ===== */
-
     if (interaction.isChatInputCommand()) {
 
       await interaction.deferReply({ ephemeral: true });
@@ -103,21 +101,26 @@ client.on("interactionCreate", async interaction => {
       if (!interaction.member.roles.cache.has(config.adminRoleId))
         return interaction.editReply({ content: "❌ Sem permissão." });
 
-      /* ===== CRIAR PRODUTO ===== */
+      const data = getProducts();
+
+      /* ===== CRIAR PRODUTO SIMPLES ===== */
 
       if (interaction.commandName === "criar-produto") {
 
-        editorState[interaction.user.id] = {
-          nome: "Nome do Produto",
-          descricao: "Descrição premium do produto...",
+        const produto = {
+          id: Date.now().toString(),
+          nome: "Novo Produto",
+          descricao: "Descrição do produto...",
           preco: 0,
           estoque: 0,
           link: "https://link.com"
         };
 
+        data.products.push(produto);
+        saveProducts(data);
+
         return interaction.editReply({
-          embeds: [gerarEmbed(interaction.user.id)],
-          components: gerarBotoes()
+          embeds: [gerarEmbedPremium(produto)]
         });
       }
 
@@ -125,13 +128,10 @@ client.on("interactionCreate", async interaction => {
 
       if (interaction.commandName === "listar-produtos") {
 
-        const data = getProducts();
-
         if (!data.products.length)
-          return interaction.editReply({ content: "❌ Nenhum produto cadastrado." });
+          return interaction.editReply({ content: "❌ Nenhum produto." });
 
         let lista = "**📦 Produtos cadastrados:**\n\n";
-
         data.products.forEach(p => {
           lista += `ID: \`${p.id}\` • ${p.nome}\n`;
         });
@@ -143,98 +143,51 @@ client.on("interactionCreate", async interaction => {
 
       if (interaction.commandName === "painel") {
 
-        const data = getProducts();
-
         if (!data.products.length)
           return interaction.editReply({ content: "❌ Sem produtos." });
 
         for (const p of data.products) {
 
-          const embed = gerarEmbedVisual(p);
+          const embed = gerarEmbedPremium(p);
 
-          await interaction.channel.send({ embeds: [embed] });
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`buy_${p.id}`)
+              .setLabel("🛒 Comprar")
+              .setStyle(ButtonStyle.Success)
+          );
+
+          await interaction.channel.send({
+            embeds: [embed],
+            components: [row]
+          });
         }
 
         return interaction.editReply({ content: "✅ Painel criado!" });
       }
     }
 
-    /* ===== BOTÕES DO EDITOR ===== */
+    /* ===== BOTÃO COMPRAR ===== */
 
-    if (interaction.isButton()) {
+    if (interaction.isButton() && interaction.customId.startsWith("buy_")) {
 
-      const userId = interaction.user.id;
+      await interaction.deferReply({ ephemeral: true });
 
-      if (!editorState[userId])
-        return interaction.reply({ content: "❌ Editor expirado.", ephemeral: true });
+      const id = interaction.customId.replace("buy_", "");
+      const produto = getProducts().products.find(p => p.id === id);
 
-      if (interaction.customId === "salvar") {
-
-        const data = getProducts();
-
-        data.products.push({
-          id: Date.now().toString(),
-          ...editorState[userId]
-        });
-
-        saveProducts(data);
-        delete editorState[userId];
-
-        return interaction.update({
-          content: "✅ Produto salvo com sucesso!",
-          embeds: [],
-          components: []
-        });
-      }
-
-      if (interaction.customId === "cancelar") {
-        delete editorState[userId];
-        return interaction.update({
-          content: "❌ Produto cancelado.",
-          embeds: [],
-          components: []
-        });
-      }
-
-      const campo = interaction.customId.replace("editar_", "");
-
-      const modal = new ModalBuilder()
-        .setCustomId(`modal_${campo}`)
-        .setTitle("Editar Produto");
-
-      const input = new TextInputBuilder()
-        .setCustomId("valor_input")
-        .setLabel(`Novo ${campo}`)
-        .setStyle(
-          campo === "descricao"
-            ? TextInputStyle.Paragraph
-            : TextInputStyle.Short
-        )
-        .setRequired(true);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(input));
-
-      return interaction.showModal(modal);
-    }
-
-    /* ===== MODAL ===== */
-
-    if (interaction.isModalSubmit()) {
-
-      const userId = interaction.user.id;
-      const campo = interaction.customId.replace("modal_", "");
-      const valor = interaction.fields.getTextInputValue("valor_input");
-
-      editorState[userId][campo] =
-        campo === "preco" || campo === "estoque"
-          ? Number(valor)
-          : valor;
-
-      return interaction.reply({
-        embeds: [gerarEmbed(userId)],
-        components: gerarBotoes(),
-        ephemeral: true
+      const canal = await interaction.guild.channels.create({
+        name: `compra-${interaction.user.username}`,
+        type: ChannelType.GuildText,
+        parent: config.ticketCategoryId,
+        permissionOverwrites: [
+          { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
+        ]
       });
+
+      await canal.send(`✅ Ticket criado para **${produto.nome}**.`);
+      return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
     }
 
   } catch (err) {
@@ -242,20 +195,16 @@ client.on("interactionCreate", async interaction => {
     if (!interaction.replied)
       interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
   }
-
 });
 
-/* ================= EMBEDS ================= */
+/* ================= EMBED PREMIUM ================= */
 
-function gerarEmbed(userId) {
-
-  const p = editorState[userId];
+function gerarEmbedPremium(p) {
 
   return new EmbedBuilder()
     .setTitle(`🛍 ${p.nome.toUpperCase()}`)
     .setDescription(
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `✨ **PRODUTO PREMIUM**\n` +
+
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       `📦 **DESCRIÇÃO:**\n${p.descricao}\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
@@ -265,42 +214,11 @@ function gerarEmbed(userId) {
       `━━━━━━━━━━━━━━━━━━━━━━━━━━`
     )
     .setColor("#9b00ff")
-    .setImage("https://imgur.com/a/Rxv1Omm") // coloque aqui o link do banner que você enviou
+    .setImage("https://i.imgur.com/8Km9tLL.png")
     .setFooter({
       text: "Awakening Store • Entrega automática • Compra segura"
     })
     .setTimestamp();
-}
-
-function gerarEmbedVisual(p) {
-
-  return new EmbedBuilder()
-    .setTitle(`🛍 ${p.nome}`)
-    .setDescription(
-      `${p.descricao}\n\n` +
-      `💰 Valor: R$ ${formatar(p.preco)}\n` +
-      `📦 Estoque: ${p.estoque}`
-    )
-    .setColor("#00ff88")
-    .setFooter({ text: "Awakening Store • Loja Profissional" });
-}
-
-function gerarBotoes() {
-
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("editar_nome").setLabel("✏️ Nome").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("editar_descricao").setLabel("📝 Descrição").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("editar_preco").setLabel("💰 Preço").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("editar_estoque").setLabel("📦 Estoque").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("editar_link").setLabel("🔗 Link").setStyle(ButtonStyle.Secondary)
-  );
-
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("salvar").setLabel("✅ Salvar").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("cancelar").setLabel("❌ Cancelar").setStyle(ButtonStyle.Danger)
-  );
-
-  return [row1, row2];
 }
 
 client.login(config.token);
