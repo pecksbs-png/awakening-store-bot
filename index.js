@@ -63,26 +63,21 @@ function formatarValor(valor) {
 const commands = [
   new SlashCommandBuilder()
     .setName("criar-produto")
-    .setDescription("Criar um novo produto na loja")
+    .setDescription("Criar produto profissional")
     .addStringOption(o =>
-      o.setName("nome")
-        .setDescription("Nome do produto")
-        .setRequired(true)
+      o.setName("nome").setDescription("Nome do produto").setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("descricao").setDescription("Descrição completa").setRequired(true)
     )
     .addNumberOption(o =>
-      o.setName("preco")
-        .setDescription("Preço do produto")
-        .setRequired(true)
+      o.setName("preco").setDescription("Preço").setRequired(true)
     )
     .addIntegerOption(o =>
-      o.setName("estoque")
-        .setDescription("Quantidade em estoque")
-        .setRequired(true)
+      o.setName("estoque").setDescription("Estoque").setRequired(true)
     )
     .addStringOption(o =>
-      o.setName("link")
-        .setDescription("Link do produto")
-        .setRequired(true)
+      o.setName("link").setDescription("Link do produto").setRequired(true)
     ),
 
   new SlashCommandBuilder()
@@ -119,6 +114,7 @@ client.on("interactionCreate", async interaction => {
       const produto = {
         id: Date.now().toString(),
         nome: interaction.options.getString("nome"),
+        descricao: interaction.options.getString("descricao"),
         preco: interaction.options.getNumber("preco"),
         estoque: interaction.options.getInteger("estoque"),
         link: interaction.options.getString("link")
@@ -137,23 +133,31 @@ client.on("interactionCreate", async interaction => {
       if (data.products.length === 0)
         return interaction.reply({ content: "❌ Sem produtos.", ephemeral: true });
 
-      const embed = new EmbedBuilder()
-        .setTitle("🛒 AWAKENING STORE")
-        .setDescription("Selecione o produto abaixo para iniciar a compra.")
-        .setColor("#00ff88");
+      for (const p of data.products) {
 
-      const row = new ActionRowBuilder();
+        const embed = new EmbedBuilder()
+          .setTitle(`🛍 ${p.nome}`)
+          .setDescription(
+            `${p.descricao}\n\n━━━━━━━━━━━━━━━━━━\n` +
+            `💰 **Valor:** R$ ${formatarValor(p.preco)}\n` +
+            `📦 **Estoque:** ${p.estoque}\n` +
+            `━━━━━━━━━━━━━━━━━━`
+          )
+          .setColor("#00ff88")
+          .setFooter({ text: "Awakening Store • Entrega automática" });
 
-      data.products.forEach(p => {
-        row.addComponents(
+        const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder()
             .setCustomId(`buy_${p.id}`)
-            .setLabel(`🛒 ${p.nome}`)
+            .setLabel("🛒 Comprar")
             .setStyle(ButtonStyle.Success)
         );
-      });
 
-      await interaction.channel.send({ embeds: [embed], components: [row] });
+        await interaction.channel.send({
+          embeds: [embed],
+          components: [row]
+        });
+      }
 
       return interaction.reply({ content: "✅ Painel criado!", ephemeral: true });
     }
@@ -172,25 +176,34 @@ client.on("interactionCreate", async interaction => {
     if (!produto)
       return interaction.editReply({ content: "❌ Produto não encontrado." });
 
-    const canal = await interaction.guild.channels.create({
-      name: `compra-${interaction.user.username}`,
-      type: ChannelType.GuildText,
-      parent: config.ticketCategoryId,
-      permissionOverwrites: [
-        {
-          id: interaction.guild.id,
-          deny: [PermissionsBitField.Flags.ViewChannel]
-        },
-        {
-          id: interaction.user.id,
-          allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-        },
-        {
-          id: config.adminRoleId,
-          allow: [PermissionsBitField.Flags.ViewChannel]
-        }
-      ]
-    });
+    let canal;
+
+    try {
+      canal = await interaction.guild.channels.create({
+        name: `compra-${interaction.user.username}`,
+        type: ChannelType.GuildText,
+        parent: config.ticketCategoryId || null,
+        permissionOverwrites: [
+          {
+            id: interaction.guild.id,
+            deny: [PermissionsBitField.Flags.ViewChannel]
+          },
+          {
+            id: interaction.user.id,
+            allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+          },
+          {
+            id: config.adminRoleId,
+            allow: [PermissionsBitField.Flags.ViewChannel]
+          }
+        ]
+      });
+    } catch (err) {
+      console.error(err);
+      return interaction.editReply({
+        content: "❌ Erro ao criar ticket. Verifique permissões do bot ou categoria."
+      });
+    }
 
     carrinhos[canal.id] = {
       userId: interaction.user.id,
@@ -234,83 +247,6 @@ client.on("interactionCreate", async interaction => {
 
     await interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
   }
-
-  /* ========= ALTERAR QUANTIDADE ========= */
-
-  if (interaction.isStringSelectMenu() && interaction.customId === "quantidade") {
-
-    const carrinho = carrinhos[interaction.channel.id];
-    const data = getProducts();
-    const produto = data.products.find(p => p.id === carrinho.produtoId);
-
-    carrinho.quantidade = parseInt(interaction.values[0]);
-
-    const total = produto.preco * carrinho.quantidade;
-
-    const embed = new EmbedBuilder()
-      .setTitle("🛍 Confirme sua Compra")
-      .setDescription(
-        `📦 Produto: **${produto.nome}**\n\n` +
-        `📦 Quantidade: ${carrinho.quantidade}\n` +
-        `💰 Total: R$${formatarValor(total)}`
-      )
-      .setColor("#00ff88");
-
-    await interaction.update({ embeds: [embed] });
-  }
-
-  /* ========= CONFIRMAR PAGAMENTO ========= */
-
-  if (interaction.isButton() && interaction.customId === "confirmar") {
-
-    await interaction.deferReply();
-
-    const carrinho = carrinhos[interaction.channel.id];
-    const data = getProducts();
-    const produto = data.products.find(p => p.id === carrinho.produtoId);
-
-    const total = produto.preco * carrinho.quantidade;
-
-    const pagamento = await paymentClient.create({
-      body: {
-        transaction_amount: total,
-        description: produto.nome,
-        payment_method_id: "pix",
-        payer: { email: "cliente@email.com" }
-      }
-    });
-
-    pagamentos[pagamento.id] = {
-      userId: carrinho.userId,
-      produtoId: produto.id,
-      quantidade: carrinho.quantidade,
-      canalId: interaction.channel.id
-    };
-
-    const qrBase64 = pagamento.point_of_interaction.transaction_data.qr_code_base64;
-    const qrBuffer = Buffer.from(qrBase64, "base64");
-
-    const attachment = new AttachmentBuilder(qrBuffer, { name: "qrcode.png" });
-
-    const embed = new EmbedBuilder()
-      .setTitle("💳 PAGAMENTO VIA PIX")
-      .setDescription(
-        `Escaneie o QR Code abaixo.\n\n` +
-        `Ou copie o código:\n\n\`\`\`\n${pagamento.point_of_interaction.transaction_data.qr_code}\n\`\`\`\n\n` +
-        `📌 Passo a passo:\n` +
-        `1️⃣ Abra seu banco\n` +
-        `2️⃣ Vá em Pix\n` +
-        `3️⃣ Escaneie o QR Code\n` +
-        `4️⃣ Confirme o pagamento`
-      )
-      .setImage("attachment://qrcode.png")
-      .setColor("#00ff88");
-
-    await interaction.editReply({
-      embeds: [embed],
-      files: [attachment]
-    });
-  }
 });
 
 /* ================= WEBHOOK ================= */
@@ -338,12 +274,6 @@ app.post("/webhook", async (req, res) => {
 
     const user = await client.users.fetch(info.userId);
     await user.send(`✅ Pagamento aprovado!\nAqui está seu produto:\n${produto.link}`);
-
-    const canal = await client.channels.fetch(info.canalId);
-    await canal.send("✅ Pagamento confirmado! Produto enviado na DM.");
-
-    const log = await client.channels.fetch(config.logChannelId);
-    await log.send(`💰 Venda: ${produto.nome} x${info.quantidade}`);
 
     delete pagamentos[paymentId];
   }
