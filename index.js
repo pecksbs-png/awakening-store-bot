@@ -103,7 +103,7 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(config.token);
 
 client.once("ready", async () => {
-  console.log("✅ Loja Profissional Online");
+  console.log("✅ Loja Final Online");
   await rest.put(Routes.applicationCommands(config.clientId), { body: commands });
 });
 
@@ -222,86 +222,37 @@ client.on("interactionCreate", async interaction => {
         userId: interaction.user.id
       };
 
-      await canal.send(
-        `✅ Ticket criado para **${produto.nome}**.\nClique em Inserir Quantidade.`
-      );
-
-      return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
-    }
-
-    /* ===== MODAL QUANTIDADE ===== */
-
-    if (interaction.isButton() && interaction.customId === "inserir_qtd") {
-
-      const modal = new ModalBuilder()
-        .setCustomId("modal_qtd")
-        .setTitle("Digite a quantidade");
-
-      const input = new TextInputBuilder()
-        .setCustomId("quantidade_input")
-        .setLabel("Escreva a quantidade de produtos")
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true);
-
-      modal.addComponents(new ActionRowBuilder().addComponents(input));
-      return interaction.showModal(modal);
-    }
-
-    /* ===== PAGAMENTO ===== */
-
-    if (interaction.isModalSubmit() && interaction.customId === "modal_qtd") {
-
-      await interaction.deferReply();
-
-      const qtd = parseInt(interaction.fields.getTextInputValue("quantidade_input"));
-      const carrinho = carrinhos[interaction.channel.id];
-      const data = getProducts();
-      const produto = data.products.find(p => p.id === carrinho.produtoId);
-
-      if (isNaN(qtd) || qtd <= 0 || qtd > produto.estoque)
-        return interaction.editReply({ content: "❌ Quantidade inválida." });
-
-      const total = produto.preco * qtd;
-
-      const pagamento = await paymentClient.create({
-        body: {
-          transaction_amount: total,
-          description: produto.nome,
-          payment_method_id: "pix",
-          payer: { email: "cliente@email.com" }
-        }
-      });
-
-      pagamentos[pagamento.id] = {
-        produtoId: produto.id,
-        quantidade: qtd,
-        userId: interaction.user.id,
-        canalId: interaction.channel.id,
-        total: total
-      };
-
-      const qrBase64 = pagamento.point_of_interaction.transaction_data.qr_code_base64;
-      const qrBuffer = Buffer.from(qrBase64, "base64");
-      const attachment = new AttachmentBuilder(qrBuffer, { name: "qrcode.png" });
-
       const embed = new EmbedBuilder()
-        .setTitle("💳 PAGAMENTO VIA PIX")
+        .setTitle("🛒 FINALIZAR COMPRA")
         .setDescription(
-          `💰 Valor total: R$ ${formatar(total)}\n\n` +
-          `🟢 PASSO A PASSO\n\n` +
-          `🟢 Abra seu banco\n` +
-          `🟢 Vá em Pix\n` +
-          `🟢 Escaneie o QR Code\n` +
-          `🟢 Confirme o pagamento\n\n` +
-          `📋 Código:\n\n\`\`\`\n${pagamento.point_of_interaction.transaction_data.qr_code}\n\`\`\``
+          `📦 Produto: **${produto.nome}**\n\n` +
+          `💰 Valor unitário: R$ ${formatar(produto.preco)}\n\n` +
+          `━━━━━━━━━━━━━━━━━━\n` +
+          `✏️ Clique em **Inserir Quantidade** para continuar.\n` +
+          `🔒 Ou feche o ticket.\n` +
+          `━━━━━━━━━━━━━━━━━━`
         )
-        .setImage("attachment://qrcode.png")
         .setColor("#00ff88");
 
-      return interaction.editReply({
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("inserir_qtd")
+          .setLabel("✏️ Inserir Quantidade")
+          .setStyle(ButtonStyle.Primary),
+
+        new ButtonBuilder()
+          .setCustomId("fechar_ticket")
+          .setLabel("🔒 Fechar Ticket")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await canal.send({
+        content: `<@${interaction.user.id}>`,
         embeds: [embed],
-        files: [attachment]
+        components: [row]
       });
+
+      return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
     }
 
   } catch (err) {
