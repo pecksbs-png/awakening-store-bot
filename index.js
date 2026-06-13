@@ -4,7 +4,12 @@ import bodyParser from "body-parser";
 import fs from "fs";
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
-const config = JSON.parse(fs.readFileSync("./config.json"));
+const config = {
+  token: process.env.DISCORD_TOKEN,
+  clientId: process.env.CLIENT_ID,
+  mercadoPagoToken: process.env.MP_TOKEN,
+  logChannelId: process.env.LOG_CHANNEL_ID
+};
 const products = JSON.parse(fs.readFileSync("./products.json"));
 
 /* ================= MERCADO PAGO ================= */
