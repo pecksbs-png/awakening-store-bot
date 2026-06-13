@@ -260,16 +260,14 @@ function gerarEmbed(userId) {
       `📦 **DESCRIÇÃO:**\n${p.descricao}\n\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       `💰 **VALOR:** R$ ${formatar(p.preco)}\n` +
-      `📦 **ESTOQUE:** ${p.estoque}\n` +
-      `🔗 **LINK:** ${p.link}\n\n` +
+      `📦 **ESTOQUE:** ${p.estoque}\n\n` +
+      `🔗 **LINK:**\n${p.link}\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━`
     )
-    .setColor("#0f0f0f")
-    .setThumbnail("https://cdn-icons-png.flaticon.com/512/263/263142.png")
-    .setImage("https://i.imgur.com/8Km9tLL.png")
+    .setColor("#9b00ff")
+    .setImage("https://imgur.com/a/Rxv1Omm") // coloque aqui o link do banner que você enviou
     .setFooter({
-      text: "Awakening Store • Entrega automática • Compra segura",
-      iconURL: "https://cdn-icons-png.flaticon.com/512/891/891419.png"
+      text: "Awakening Store • Entrega automática • Compra segura"
     })
     .setTimestamp();
 }
