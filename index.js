@@ -46,11 +46,23 @@ let pagamentos = {};
 
 /* ================= FUNÇÕES ================= */
 
+function garantirArquivo() {
+  if (!fs.existsSync("./data")) {
+    fs.mkdirSync("./data");
+  }
+
+  if (!fs.existsSync(productsFile)) {
+    fs.writeFileSync(productsFile, JSON.stringify({ products: [] }, null, 2));
+  }
+}
+
 function getProducts() {
+  garantirArquivo();
   return JSON.parse(fs.readFileSync(productsFile));
 }
 
 function saveProducts(data) {
+  garantirArquivo();
   fs.writeFileSync(productsFile, JSON.stringify(data, null, 2));
 }
 
