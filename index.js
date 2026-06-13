@@ -71,25 +71,13 @@ const rest = new REST({ version: "10" }).setToken(config.token);
 /* ================= READY ================= */
 
 client.once("ready", async () => {
-  console.log("✅ Bot Online");
+  console.log("✅ Editor Online");
 
-  const guildId = client.guilds.cache.first().id;
+  const guild = client.guilds.cache.first();
+  if (!guild) return console.log("⚠️ Nenhuma guild encontrada.");
 
-  // Limpa globais
   await rest.put(
-    Routes.applicationCommands(config.clientId),
-    { body: [] }
-  );
-
-  // Limpa guild
-  await rest.put(
-    Routes.applicationGuildCommands(config.clientId, guildId),
-    { body: [] }
-  );
-
-  // Registra novos
-  await rest.put(
-    Routes.applicationGuildCommands(config.clientId, guildId),
+    Routes.applicationGuildCommands(config.clientId, guild.id),
     { body: commands }
   );
 
@@ -106,50 +94,22 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.isChatInputCommand()) {
 
-      await interaction.deferReply({ ephemeral: true });
+      if (!interaction.member.roles.cache.has(config.adminRoleId))
+        return interaction.reply({ content: "❌ Sem permissão.", ephemeral: true });
 
-      if (interaction.commandName === "criar-produto") {
+      editorState[interaction.user.id] = {
+        nome: "Nome do Produto",
+        descricao: "Descrição do produto...",
+        preco: 0,
+        estoque: 0,
+        link: "https://link.com"
+      };
 
-        if (!interaction.member.roles.cache.has(config.adminRoleId))
-          return interaction.editReply({ content: "❌ Sem permissão." });
-
-        editorState[interaction.user.id] = {
-          nome: "Nome do Produto",
-          descricao: "Descrição do produto...",
-          preco: 0,
-          estoque: 0,
-          link: "https://link.com"
-        };
-
-        return interaction.editReply({
-          embeds: [gerarEmbed(interaction.user.id)],
-          components: [gerarBotoes()]
-        });
-      }
-
-      if (interaction.commandName === "painel") {
-
-        const data = getProducts();
-
-        if (!data.products.length)
-          return interaction.editReply({ content: "❌ Nenhum produto cadastrado." });
-
-        for (const p of data.products) {
-
-          const embed = new EmbedBuilder()
-            .setTitle(`🛍 ${p.nome}`)
-            .setDescription(
-              `${p.descricao}\n\n` +
-              `💰 Valor: R$ ${formatar(p.preco)}\n` +
-              `📦 Estoque: ${p.estoque}`
-            )
-            .setColor("#00ff88");
-
-          await interaction.channel.send({ embeds: [embed] });
-        }
-
-        return interaction.editReply({ content: "✅ Painel criado!" });
-      }
+      return interaction.reply({
+        embeds: [gerarEmbed(interaction.user.id)],
+        components: gerarBotoes(),
+        ephemeral: true
+      });
     }
 
     /* ===== BOTÕES ===== */
@@ -164,7 +124,6 @@ client.on("interactionCreate", async interaction => {
       if (interaction.customId === "salvar") {
 
         const data = getProducts();
-
         data.products.push({
           id: Date.now().toString(),
           ...editorState[userId]
@@ -174,7 +133,16 @@ client.on("interactionCreate", async interaction => {
         delete editorState[userId];
 
         return interaction.update({
-          content: "✅ Produto salvo!",
+          content: "✅ Produto salvo com sucesso!",
+          embeds: [],
+          components: []
+        });
+      }
+
+      if (interaction.customId === "cancelar") {
+        delete editorState[userId];
+        return interaction.update({
+          content: "❌ Produto cancelado.",
           embeds: [],
           components: []
         });
@@ -219,7 +187,7 @@ client.on("interactionCreate", async interaction => {
 
       return interaction.reply({
         embeds: [gerarEmbed(userId)],
-        components: [gerarBotoes()],
+        components: gerarBotoes(),
         ephemeral: true
       });
     }
@@ -232,7 +200,7 @@ client.on("interactionCreate", async interaction => {
 
 });
 
-/* ================= FUNÇÕES AUX ================= */
+/* ================= AUX ================= */
 
 function gerarEmbed(userId) {
 
@@ -241,11 +209,13 @@ function gerarEmbed(userId) {
   return new EmbedBuilder()
     .setTitle("🛍 PREVIEW DO PRODUTO")
     .setDescription(
-      `Nome: ${p.nome}\n\n` +
-      `Descrição:\n${p.descricao}\n\n` +
-      `Preço: R$ ${formatar(p.preco)}\n` +
-      `Estoque: ${p.estoque}\n` +
-      `Link: ${p.link}`
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `📦 Nome: ${p.nome}\n\n` +
+      `📝 Descrição:\n${p.descricao}\n\n` +
+      `💰 Preço: R$ ${formatar(p.preco)}\n` +
+      `📦 Estoque: ${p.estoque}\n` +
+      `🔗 Link: ${p.link}\n` +
+      `━━━━━━━━━━━━━━━━━━`
     )
     .setColor("#00ff88");
 }
@@ -253,42 +223,16 @@ function gerarEmbed(userId) {
 function gerarBotoes() {
 
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("editar_nome")
-      .setLabel("✏️ Nome")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("editar_descricao")
-      .setLabel("📝 Descrição")
-      .setStyle(ButtonStyle.Primary),
-
-    new ButtonBuilder()
-      .setCustomId("editar_preco")
-      .setLabel("💰 Preço")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("editar_estoque")
-      .setLabel("📦 Estoque")
-      .setStyle(ButtonStyle.Secondary),
-
-    new ButtonBuilder()
-      .setCustomId("editar_link")
-      .setLabel("🔗 Link")
-      .setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId("editar_nome").setLabel("✏️ Nome").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("editar_descricao").setLabel("📝 Descrição").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("editar_preco").setLabel("💰 Preço").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("editar_estoque").setLabel("📦 Estoque").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("editar_link").setLabel("🔗 Link").setStyle(ButtonStyle.Secondary)
   );
 
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("salvar")
-      .setLabel("✅ Salvar")
-      .setStyle(ButtonStyle.Success),
-
-    new ButtonBuilder()
-      .setCustomId("cancelar")
-      .setLabel("❌ Cancelar")
-      .setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId("salvar").setLabel("✅ Salvar").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("cancelar").setLabel("❌ Cancelar").setStyle(ButtonStyle.Danger)
   );
 
   return [row1, row2];
