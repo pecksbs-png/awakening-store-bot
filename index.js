@@ -9,13 +9,10 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  AttachmentBuilder,
   StringSelectMenuBuilder,
   PermissionsBitField
 } from "discord.js";
 
-import express from "express";
-import bodyParser from "body-parser";
 import fs from "fs";
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
@@ -25,23 +22,18 @@ const config = {
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
   mpToken: process.env.MP_TOKEN,
-  logChannelId: process.env.LOG_CHANNEL_ID,
   adminRoleId: process.env.ADMIN_ROLE_ID,
   ticketCategoryId: process.env.TICKET_CATEGORY_ID
 };
 
 const productsPath = "./data/products.json";
 
-/* ================= GARANTIR JSON ================= */
+/* ================= JSON ================= */
 
 function garantirJSON() {
-  if (!fs.existsSync("./data")) {
-    fs.mkdirSync("./data");
-  }
-
-  if (!fs.existsSync(productsPath)) {
+  if (!fs.existsSync("./data")) fs.mkdirSync("./data");
+  if (!fs.existsSync(productsPath))
     fs.writeFileSync(productsPath, JSON.stringify({ products: [] }, null, 2));
-  }
 }
 
 function getProducts() {
@@ -54,8 +46,8 @@ function saveProducts(data) {
   fs.writeFileSync(productsPath, JSON.stringify(data, null, 2));
 }
 
-function formatar(valor) {
-  return valor.toFixed(2).replace(".", ",");
+function formatar(v) {
+  return v.toFixed(2).replace(".", ",");
 }
 
 /* ================= MERCADO PAGO ================= */
@@ -72,44 +64,29 @@ const client = new Client({
 });
 
 let carrinhos = {};
-let pagamentos = {};
 
 /* ================= COMANDOS ================= */
 
 const commands = [
   new SlashCommandBuilder()
     .setName("criar-produto")
-    .setDescription("Criar produto profissional")
-    .addStringOption(o =>
-      o.setName("nome").setDescription("Nome do produto").setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("descricao").setDescription("Descrição completa").setRequired(true)
-    )
-    .addNumberOption(o =>
-      o.setName("preco").setDescription("Preço").setRequired(true)
-    )
-    .addIntegerOption(o =>
-      o.setName("estoque").setDescription("Estoque").setRequired(true)
-    )
-    .addStringOption(o =>
-      o.setName("link").setDescription("Link do produto").setRequired(true)
-    ),
+    .setDescription("Criar produto")
+    .addStringOption(o => o.setName("nome").setDescription("Nome").setRequired(true))
+    .addStringOption(o => o.setName("descricao").setDescription("Descrição").setRequired(true))
+    .addNumberOption(o => o.setName("preco").setDescription("Preço").setRequired(true))
+    .addIntegerOption(o => o.setName("estoque").setDescription("Estoque").setRequired(true))
+    .addStringOption(o => o.setName("link").setDescription("Link").setRequired(true)),
 
   new SlashCommandBuilder()
     .setName("painel")
-    .setDescription("Criar painel profissional")
+    .setDescription("Criar painel")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
 
 client.once("ready", async () => {
-  console.log("✅ Bot Online");
-
-  await rest.put(
-    Routes.applicationCommands(config.clientId),
-    { body: commands }
-  );
+  console.log("✅ Online");
+  await rest.put(Routes.applicationCommands(config.clientId), { body: commands });
 });
 
 /* ================= INTERAÇÕES ================= */
@@ -118,7 +95,7 @@ client.on("interactionCreate", async interaction => {
 
   try {
 
-    /* ========= CRIAR PRODUTO ========= */
+    /* ===== CRIAR PRODUTO ===== */
 
     if (interaction.isChatInputCommand()) {
 
@@ -146,12 +123,11 @@ client.on("interactionCreate", async interaction => {
         return interaction.editReply({ content: "✅ Produto criado!" });
       }
 
-      /* ========= PAINEL ========= */
+      /* ===== PAINEL ===== */
 
       if (interaction.commandName === "painel") {
 
         const data = getProducts();
-
         if (data.products.length === 0)
           return interaction.editReply({ content: "❌ Sem produtos." });
 
@@ -160,11 +136,7 @@ client.on("interactionCreate", async interaction => {
           const embed = new EmbedBuilder()
             .setTitle(`🛍 ${p.nome}`)
             .setDescription(
-              `${p.descricao}\n\n` +
-              `━━━━━━━━━━━━━━━━━━\n` +
-              `💰 **Valor:** R$ ${formatar(p.preco)}\n` +
-              `📦 **Estoque:** ${p.estoque}\n` +
-              `━━━━━━━━━━━━━━━━━━`
+              `${p.descricao}\n\n💰 Valor: R$ ${formatar(p.preco)}\n📦 Estoque: ${p.estoque}`
             )
             .setColor("#00ff88");
 
@@ -182,7 +154,7 @@ client.on("interactionCreate", async interaction => {
       }
     }
 
-    /* ========= BOTÃO COMPRAR ========= */
+    /* ===== BOTÃO BUY ===== */
 
     if (interaction.isButton() && interaction.customId.startsWith("buy_")) {
 
@@ -195,48 +167,25 @@ client.on("interactionCreate", async interaction => {
       if (!produto)
         return interaction.editReply({ content: "❌ Produto não encontrado." });
 
-      let canal;
-
-      try {
-        canal = await interaction.guild.channels.create({
-          name: `compra-${interaction.user.username}`,
-          type: ChannelType.GuildText,
-          parent: config.ticketCategoryId || null,
-          permissionOverwrites: [
-            {
-              id: interaction.guild.id,
-              deny: [PermissionsBitField.Flags.ViewChannel]
-            },
-            {
-              id: interaction.user.id,
-              allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-            },
-            {
-              id: config.adminRoleId,
-              allow: [PermissionsBitField.Flags.ViewChannel]
-            }
-          ]
-        });
-      } catch (err) {
-        return interaction.editReply({
-          content: "❌ Erro ao criar ticket. Verifique permissões."
-        });
-      }
+      const canal = await interaction.guild.channels.create({
+        name: `compra-${interaction.user.username}`,
+        type: ChannelType.GuildText,
+        parent: config.ticketCategoryId || null,
+        permissionOverwrites: [
+          { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+          { id: config.adminRoleId, allow: [PermissionsBitField.Flags.ViewChannel] }
+        ]
+      });
 
       carrinhos[canal.id] = {
-        userId: interaction.user.id,
         produtoId: produto.id,
         quantidade: 1
       };
 
       const embed = new EmbedBuilder()
-        .setTitle("🛍 Confirme sua Compra")
-        .setDescription(
-          `📦 Produto: **${produto.nome}**\n\n` +
-          `💰 Preço unitário: R$${formatar(produto.preco)}\n` +
-          `📦 Estoque: ${produto.estoque}\n\n` +
-          `Escolha a quantidade abaixo.`
-        )
+        .setTitle("🛍 Confirme sua compra")
+        .setDescription(`Produto: **${produto.nome}**\nPreço: R$ ${formatar(produto.preco)}`)
         .setColor("#00ff88");
 
       const menu = new StringSelectMenuBuilder()
@@ -266,26 +215,45 @@ client.on("interactionCreate", async interaction => {
       return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
     }
 
-  } catch (err) {
-    console.error("ERRO GLOBAL:", err);
+    /* ===== CONFIRMAR ===== */
 
-    if (interaction.deferred || interaction.replied) {
-      return interaction.editReply({ content: "❌ Erro interno." });
-    } else {
-      return interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
+    if (interaction.isButton() && interaction.customId === "confirmar") {
+
+      await interaction.deferReply();
+
+      const carrinho = carrinhos[interaction.channel.id];
+      if (!carrinho)
+        return interaction.editReply({ content: "❌ Carrinho não encontrado." });
+
+      const data = getProducts();
+      const produto = data.products.find(p => p.id === carrinho.produtoId);
+
+      const total = produto.preco * carrinho.quantidade;
+
+      const pagamento = await paymentClient.create({
+        body: {
+          transaction_amount: total,
+          description: produto.nome,
+          payment_method_id: "pix",
+          payer: { email: "cliente@email.com" }
+        }
+      });
+
+      return interaction.editReply({
+        content:
+          `💳 PAGAMENTO GERADO\n\n` +
+          `Valor: R$ ${formatar(total)}\n\n` +
+          `Copie o código abaixo:\n\n` +
+          `${pagamento.point_of_interaction.transaction_data.qr_code}`
+      });
     }
+
+  } catch (err) {
+    console.error(err);
+    if (!interaction.replied)
+      interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
   }
+
 });
-
-/* ================= WEBHOOK ================= */
-
-const app = express();
-app.use(bodyParser.json());
-
-app.post("/webhook", async (req, res) => {
-  res.sendStatus(200);
-});
-
-app.listen(3000);
 
 client.login(config.token);
