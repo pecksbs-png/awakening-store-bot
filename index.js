@@ -252,14 +252,46 @@ function gerarEmbed(userId) {
 
 function gerarBotoes() {
 
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("editar_nome").setLabel("Nome").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("editar_descricao").setLabel("Descrição").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("editar_preco").setLabel("Preço").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("editar_estoque").setLabel("Estoque").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("editar_link").setLabel("Link").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("salvar").setLabel("Salvar").setStyle(ButtonStyle.Success)
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("editar_nome")
+      .setLabel("✏️ Nome")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("editar_descricao")
+      .setLabel("📝 Descrição")
+      .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("editar_preco")
+      .setLabel("💰 Preço")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("editar_estoque")
+      .setLabel("📦 Estoque")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("editar_link")
+      .setLabel("🔗 Link")
+      .setStyle(ButtonStyle.Secondary)
   );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("salvar")
+      .setLabel("✅ Salvar")
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId("cancelar")
+      .setLabel("❌ Cancelar")
+      .setStyle(ButtonStyle.Danger)
+  );
+
+  return [row1, row2];
 }
 
 client.login(config.token);
