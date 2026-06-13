@@ -10,41 +10,31 @@ import {
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle,
-  ChannelType,
-  PermissionsBitField,
-  AttachmentBuilder
+  TextInputStyle
 } from "discord.js";
 
 import fs from "fs";
-import express from "express";
-import bodyParser from "body-parser";
-import { MercadoPagoConfig, Payment } from "mercadopago";
 
 /* ================= CONFIG ================= */
 
 const config = {
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
-  adminRoleId: process.env.ADMIN_ROLE_ID,
-  mpToken: process.env.MP_TOKEN,
-  ticketCategoryId: process.env.TICKET_CATEGORY_ID,
-  logChannelId: process.env.LOG_CHANNEL_ID
+  adminRoleId: process.env.ADMIN_ROLE_ID
 };
 
 const productsPath = "./data/products.json";
-const statsPath = "./data/stats.json";
 
 /* ================= JSON ================= */
 
-function ensure(path, defaultData) {
+function ensureJSON() {
   if (!fs.existsSync("./data")) fs.mkdirSync("./data");
-  if (!fs.existsSync(path))
-    fs.writeFileSync(path, JSON.stringify(defaultData, null, 2));
+  if (!fs.existsSync(productsPath))
+    fs.writeFileSync(productsPath, JSON.stringify({ products: [] }, null, 2));
 }
 
 function getProducts() {
-  ensure(productsPath, { products: [] });
+  ensureJSON();
   return JSON.parse(fs.readFileSync(productsPath));
 }
 
@@ -52,23 +42,9 @@ function saveProducts(data) {
   fs.writeFileSync(productsPath, JSON.stringify(data, null, 2));
 }
 
-function getStats() {
-  ensure(statsPath, { sales: [] });
-  return JSON.parse(fs.readFileSync(statsPath));
-}
-
-function saveStats(data) {
-  fs.writeFileSync(statsPath, JSON.stringify(data, null, 2));
-}
-
 function formatar(v) {
   return Number(v || 0).toFixed(2).replace(".", ",");
 }
-
-/* ================= MERCADO PAGO ================= */
-
-const mpClient = new MercadoPagoConfig({ accessToken: config.mpToken });
-const paymentClient = new Payment(mpClient);
 
 /* ================= DISCORD ================= */
 
@@ -76,8 +52,6 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-let carrinhos = {};
-let pagamentos = {};
 let editorState = {};
 
 /* ================= COMANDOS ================= */
@@ -89,15 +63,11 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("listar-produtos")
-    .setDescription("Listar produtos"),
+    .setDescription("Listar produtos cadastrados"),
 
   new SlashCommandBuilder()
     .setName("painel")
-    .setDescription("Criar painel"),
-
-  new SlashCommandBuilder()
-    .setName("top")
-    .setDescription("Ranking compradores")
+    .setDescription("Criar painel da loja")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
@@ -105,7 +75,7 @@ const rest = new REST({ version: "10" }).setToken(config.token);
 /* ================= READY ================= */
 
 client.once("ready", async () => {
-  console.log("✅ SISTEMA COMPLETO ONLINE");
+  console.log("✅ Sistema Online");
 
   const guild = client.guilds.cache.first();
   if (!guild) return;
@@ -114,6 +84,8 @@ client.once("ready", async () => {
     Routes.applicationGuildCommands(config.clientId, guild.id),
     { body: commands }
   );
+
+  console.log("✅ Comandos registrados corretamente");
 });
 
 /* ================= INTERAÇÕES ================= */
@@ -128,13 +100,38 @@ client.on("interactionCreate", async interaction => {
 
       await interaction.deferReply({ ephemeral: true });
 
+      if (!interaction.member.roles.cache.has(config.adminRoleId))
+        return interaction.editReply({ content: "❌ Sem permissão." });
+
+      /* ===== CRIAR PRODUTO ===== */
+
+      if (interaction.commandName === "criar-produto") {
+
+        editorState[interaction.user.id] = {
+          nome: "Nome do Produto",
+          descricao: "Descrição do produto...",
+          preco: 0,
+          estoque: 0,
+          link: "https://link.com"
+        };
+
+        return interaction.editReply({
+          embeds: [gerarEmbed(interaction.user.id)],
+          components: gerarBotoes()
+        });
+      }
+
+      /* ===== LISTAR ===== */
+
       if (interaction.commandName === "listar-produtos") {
 
         const data = getProducts();
-        if (!data.products.length)
-          return interaction.editReply({ content: "❌ Nenhum produto." });
 
-        let lista = "**📦 Produtos:**\n\n";
+        if (!data.products.length)
+          return interaction.editReply({ content: "❌ Nenhum produto cadastrado." });
+
+        let lista = "**📦 Produtos cadastrados:**\n\n";
+
         data.products.forEach(p => {
           lista += `ID: \`${p.id}\` • ${p.nome}\n`;
         });
@@ -142,11 +139,14 @@ client.on("interactionCreate", async interaction => {
         return interaction.editReply({ content: lista });
       }
 
+      /* ===== PAINEL ===== */
+
       if (interaction.commandName === "painel") {
 
         const data = getProducts();
+
         if (!data.products.length)
-          return interaction.editReply({ content: "❌ Nenhum produto." });
+          return interaction.editReply({ content: "❌ Sem produtos." });
 
         for (const p of data.products) {
 
@@ -159,201 +159,138 @@ client.on("interactionCreate", async interaction => {
             )
             .setColor("#00ff88");
 
-          const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(`buy_${p.id}`)
-              .setLabel("🛒 Comprar")
-              .setStyle(ButtonStyle.Success)
-          );
-
-          await interaction.channel.send({ embeds: [embed], components: [row] });
+          await interaction.channel.send({ embeds: [embed] });
         }
 
         return interaction.editReply({ content: "✅ Painel criado!" });
       }
+    }
 
-      if (interaction.commandName === "top") {
+    /* ===== BOTÕES DO EDITOR ===== */
 
-        const stats = getStats();
-        const ranking = stats.sales.reduce((acc, s) => {
-          acc[s.user] = (acc[s.user] || 0) + s.total;
-          return acc;
-        }, {});
+    if (interaction.isButton()) {
 
-        const sorted = Object.entries(ranking)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 5);
+      const userId = interaction.user.id;
 
-        if (!sorted.length)
-          return interaction.editReply({ content: "❌ Sem vendas." });
+      if (!editorState[userId])
+        return interaction.reply({ content: "❌ Editor expirado.", ephemeral: true });
 
-        let desc = "";
-        sorted.forEach((r, i) => {
-          desc += `🏆 ${i + 1}. <@${r[0]}> — R$ ${formatar(r[1])}\n`;
+      if (interaction.customId === "salvar") {
+
+        const data = getProducts();
+
+        data.products.push({
+          id: Date.now().toString(),
+          ...editorState[userId]
         });
 
-        return interaction.editReply({ content: desc });
+        saveProducts(data);
+        delete editorState[userId];
+
+        return interaction.update({
+          content: "✅ Produto salvo!",
+          embeds: [],
+          components: []
+        });
       }
-    }
 
-    /* ===== BOTÃO COMPRAR ===== */
+      if (interaction.customId === "cancelar") {
+        delete editorState[userId];
+        return interaction.update({
+          content: "❌ Produto cancelado.",
+          embeds: [],
+          components: []
+        });
+      }
 
-    if (interaction.isButton() && interaction.customId.startsWith("buy_")) {
-
-      await interaction.deferReply({ ephemeral: true });
-
-      const id = interaction.customId.replace("buy_", "");
-      const produto = getProducts().products.find(p => p.id === id);
-
-      const canal = await interaction.guild.channels.create({
-        name: `compra-${interaction.user.username}`,
-        type: ChannelType.GuildText,
-        parent: config.ticketCategoryId,
-        permissionOverwrites: [
-          { id: interaction.guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          { id: interaction.user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-        ]
-      });
-
-      carrinhos[canal.id] = {
-        produtoId: produto.id,
-        userId: interaction.user.id
-      };
-
-      await canal.send(
-        `✅ Ticket criado para **${produto.nome}**.\nClique para inserir quantidade.`,
-        {
-          components: [
-            new ActionRowBuilder().addComponents(
-              new ButtonBuilder()
-                .setCustomId("inserir_qtd")
-                .setLabel("Inserir Quantidade")
-                .setStyle(ButtonStyle.Primary)
-            )
-          ]
-        }
-      );
-
-      return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
-    }
-
-    /* ===== MODAL QUANTIDADE ===== */
-
-    if (interaction.isButton() && interaction.customId === "inserir_qtd") {
+      const campo = interaction.customId.replace("editar_", "");
 
       const modal = new ModalBuilder()
-        .setCustomId("modal_qtd")
-        .setTitle("Digite a quantidade");
+        .setCustomId(`modal_${campo}`)
+        .setTitle("Editar Produto");
 
       const input = new TextInputBuilder()
-        .setCustomId("quantidade_input")
-        .setLabel("Quantidade desejada")
-        .setStyle(TextInputStyle.Short)
+        .setCustomId("valor_input")
+        .setLabel(`Novo ${campo}`)
+        .setStyle(
+          campo === "descricao"
+            ? TextInputStyle.Paragraph
+            : TextInputStyle.Short
+        )
         .setRequired(true);
 
       modal.addComponents(new ActionRowBuilder().addComponents(input));
+
       return interaction.showModal(modal);
     }
 
-    if (interaction.isModalSubmit() && interaction.customId === "modal_qtd") {
+    /* ===== MODAL ===== */
 
-      await interaction.deferReply();
+    if (interaction.isModalSubmit()) {
 
-      const qtd = parseInt(interaction.fields.getTextInputValue("quantidade_input"));
-      const carrinho = carrinhos[interaction.channel.id];
-      const produto = getProducts().products.find(p => p.id === carrinho.produtoId);
+      const userId = interaction.user.id;
+      const campo = interaction.customId.replace("modal_", "");
+      const valor = interaction.fields.getTextInputValue("valor_input");
 
-      if (isNaN(qtd) || qtd <= 0 || qtd > produto.estoque)
-        return interaction.editReply({ content: "❌ Quantidade inválida." });
+      if (!editorState[userId])
+        return interaction.reply({ content: "❌ Editor expirado.", ephemeral: true });
 
-      const total = produto.preco * qtd;
+      editorState[userId][campo] =
+        campo === "preco" || campo === "estoque"
+          ? Number(valor)
+          : valor;
 
-      const pagamento = await paymentClient.create({
-        body: {
-          transaction_amount: total,
-          description: produto.nome,
-          payment_method_id: "pix",
-          payer: { email: "cliente@email.com" }
-        }
-      });
-
-      pagamentos[pagamento.id] = {
-        produtoId: produto.id,
-        quantidade: qtd,
-        userId: interaction.user.id,
-        canalId: interaction.channel.id,
-        total: total
-      };
-
-      const qrBase64 = pagamento.point_of_interaction.transaction_data.qr_code_base64;
-      const qrBuffer = Buffer.from(qrBase64, "base64");
-      const attachment = new AttachmentBuilder(qrBuffer, { name: "qrcode.png" });
-
-      const embed = new EmbedBuilder()
-        .setTitle("💳 PAGAMENTO VIA PIX")
-        .setDescription(
-          `💰 Valor total: R$ ${formatar(total)}\n\n` +
-          `Escaneie o QR Code abaixo.\n\n` +
-          `Código:\n\n\`\`\`\n${pagamento.point_of_interaction.transaction_data.qr_code}\n\`\`\``
-        )
-        .setImage("attachment://qrcode.png")
-        .setColor("#00ff88");
-
-      return interaction.editReply({
-        embeds: [embed],
-        files: [attachment]
+      return interaction.reply({
+        embeds: [gerarEmbed(userId)],
+        components: gerarBotoes(),
+        ephemeral: true
       });
     }
 
   } catch (err) {
-    console.error("ERRO FINAL:", err);
+    console.error("ERRO GERAL:", err);
     if (!interaction.replied)
       interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
   }
+
 });
 
-/* ===== WEBHOOK ===== */
+/* ================= AUX ================= */
 
-const app = express();
-app.use(bodyParser.json());
+function gerarEmbed(userId) {
 
-app.post("/webhook", async (req, res) => {
+  const p = editorState[userId];
 
-  const paymentId = req.body?.data?.id;
-  if (!paymentId) return res.sendStatus(200);
+  return new EmbedBuilder()
+    .setTitle("🛍 PREVIEW DO PRODUTO")
+    .setDescription(
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `📦 Nome: ${p.nome}\n\n` +
+      `📝 Descrição:\n${p.descricao}\n\n` +
+      `💰 Preço: R$ ${formatar(p.preco)}\n` +
+      `📦 Estoque: ${p.estoque}\n` +
+      `🔗 Link: ${p.link}\n` +
+      `━━━━━━━━━━━━━━━━━━`
+    )
+    .setColor("#00ff88");
+}
 
-  const pagamentoInfo = await paymentClient.get({ id: paymentId });
+function gerarBotoes() {
 
-  if (pagamentoInfo.status === "approved") {
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("editar_nome").setLabel("✏️ Nome").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("editar_descricao").setLabel("📝 Descrição").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("editar_preco").setLabel("💰 Preço").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("editar_estoque").setLabel("📦 Estoque").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("editar_link").setLabel("🔗 Link").setStyle(ButtonStyle.Secondary)
+  );
 
-    const info = pagamentos[paymentId];
-    if (!info) return res.sendStatus(200);
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("salvar").setLabel("✅ Salvar").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("cancelar").setLabel("❌ Cancelar").setStyle(ButtonStyle.Danger)
+  );
 
-    const data = getProducts();
-    const produto = data.products.find(p => p.id === info.produtoId);
+  return [row1, row2];
+}
 
-    produto.estoque -= info.quantidade;
-    saveProducts(data);
-
-    const stats = getStats();
-    stats.sales.push({ user: info.userId, total: info.total });
-    saveStats(stats);
-
-    const user = await client.users.fetch(info.userId);
-    await user.send(`✅ Pagamento aprovado!\nProduto:\n${produto.link}`);
-
-    const canal = await client.channels.fetch(info.canalId);
-    await canal.send("✅ Pagamento confirmado! Ticket será fechado.");
-    setTimeout(() => canal.delete().catch(() => {}), 10000);
-
-    const log = await client.channels.fetch(config.logChannelId);
-    await log.send(`💰 Venda confirmada: ${produto.nome} x${info.quantidade}`);
-
-    delete pagamentos[paymentId];
-  }
-
-  res.sendStatus(200);
-});
-
-app.listen(3000);
 client.login(config.token);
