@@ -63,15 +63,31 @@ function formatarValor(valor) {
 const commands = [
   new SlashCommandBuilder()
     .setName("criar-produto")
-    .setDescription("Criar produto")
-    .addStringOption(o => o.setName("nome").setRequired(true))
-    .addNumberOption(o => o.setName("preco").setRequired(true))
-    .addIntegerOption(o => o.setName("estoque").setRequired(true))
-    .addStringOption(o => o.setName("link").setRequired(true)),
+    .setDescription("Criar um novo produto na loja")
+    .addStringOption(o =>
+      o.setName("nome")
+        .setDescription("Nome do produto")
+        .setRequired(true)
+    )
+    .addNumberOption(o =>
+      o.setName("preco")
+        .setDescription("Preço do produto")
+        .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("estoque")
+        .setDescription("Quantidade em estoque")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("link")
+        .setDescription("Link do produto")
+        .setRequired(true)
+    ),
 
   new SlashCommandBuilder()
     .setName("painel")
-    .setDescription("Criar painel da loja")
+    .setDescription("Criar painel profissional da loja")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
