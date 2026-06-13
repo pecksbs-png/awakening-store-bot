@@ -10,9 +10,7 @@ import {
   ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
-  TextInputStyle,
-  ChannelType,
-  PermissionsBitField
+  TextInputStyle
 } from "discord.js";
 
 import fs from "fs";
@@ -22,7 +20,7 @@ import fs from "fs";
 const config = {
   token: process.env.DISCORD_TOKEN,
   clientId: process.env.CLIENT_ID,
-  adminRoleId: process.env.ADMIN_ROLE_ID || null
+  adminRoleId: process.env.ADMIN_ROLE_ID
 };
 
 const productsPath = "./data/products.json";
@@ -61,7 +59,7 @@ let editorState = {};
 const commands = [
   new SlashCommandBuilder()
     .setName("criar-produto")
-    .setDescription("Abrir editor visual"),
+    .setDescription("Abrir editor visual de produto"),
 
   new SlashCommandBuilder()
     .setName("painel")
@@ -70,12 +68,32 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(config.token);
 
+/* ================= READY ================= */
+
 client.once("ready", async () => {
-  console.log("✅ Sistema Integrado Online");
+  console.log("✅ Bot Online");
+
+  const guildId = client.guilds.cache.first().id;
+
+  // Limpa globais
   await rest.put(
-    Routes.applicationGuildCommands(config.clientId, client.guilds.cache.first().id),
+    Routes.applicationCommands(config.clientId),
+    { body: [] }
+  );
+
+  // Limpa guild
+  await rest.put(
+    Routes.applicationGuildCommands(config.clientId, guildId),
+    { body: [] }
+  );
+
+  // Registra novos
+  await rest.put(
+    Routes.applicationGuildCommands(config.clientId, guildId),
     { body: commands }
   );
+
+  console.log("✅ Comandos registrados corretamente");
 });
 
 /* ================= INTERAÇÕES ================= */
@@ -84,7 +102,7 @@ client.on("interactionCreate", async interaction => {
 
   try {
 
-    /* ===== COMANDOS ===== */
+    /* ===== COMANDO ===== */
 
     if (interaction.isChatInputCommand()) {
 
@@ -92,9 +110,12 @@ client.on("interactionCreate", async interaction => {
 
       if (interaction.commandName === "criar-produto") {
 
+        if (!interaction.member.roles.cache.has(config.adminRoleId))
+          return interaction.editReply({ content: "❌ Sem permissão." });
+
         editorState[interaction.user.id] = {
           nome: "Nome do Produto",
-          descricao: "Descrição...",
+          descricao: "Descrição do produto...",
           preco: 0,
           estoque: 0,
           link: "https://link.com"
@@ -111,7 +132,7 @@ client.on("interactionCreate", async interaction => {
         const data = getProducts();
 
         if (!data.products.length)
-          return interaction.editReply({ content: "❌ Sem produtos." });
+          return interaction.editReply({ content: "❌ Nenhum produto cadastrado." });
 
         for (const p of data.products) {
 
@@ -143,6 +164,7 @@ client.on("interactionCreate", async interaction => {
       if (interaction.customId === "salvar") {
 
         const data = getProducts();
+
         data.products.push({
           id: Date.now().toString(),
           ...editorState[userId]
@@ -175,6 +197,7 @@ client.on("interactionCreate", async interaction => {
         .setRequired(true);
 
       modal.addComponents(new ActionRowBuilder().addComponents(input));
+
       return interaction.showModal(modal);
     }
 
@@ -202,14 +225,14 @@ client.on("interactionCreate", async interaction => {
     }
 
   } catch (err) {
-    console.error("ERRO GERAL:", err);
+    console.error("ERRO:", err);
     if (!interaction.replied)
       interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
   }
 
 });
 
-/* ================= AUX ================= */
+/* ================= FUNÇÕES AUX ================= */
 
 function gerarEmbed(userId) {
 
@@ -228,6 +251,7 @@ function gerarEmbed(userId) {
 }
 
 function gerarBotoes() {
+
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("editar_nome").setLabel("Nome").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("editar_descricao").setLabel("Descrição").setStyle(ButtonStyle.Primary),
