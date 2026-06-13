@@ -1,3 +1,4 @@
+// ================= IMPORTS =================
 import {
   Client,
   GatewayIntentBits,
@@ -21,7 +22,7 @@ import express from "express";
 import bodyParser from "body-parser";
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
-/* ================= CONFIG ================= */
+// ================= CONFIG =================
 
 const config = {
   token: process.env.DISCORD_TOKEN,
@@ -34,8 +35,6 @@ const config = {
 
 const productsPath = "./data/products.json";
 const statsPath = "./data/stats.json";
-
-/* ================= JSON ================= */
 
 function ensure(path, defaultData) {
   if (!fs.existsSync("./data")) fs.mkdirSync("./data");
@@ -62,15 +61,17 @@ function saveStats(data) {
 }
 
 function formatar(v) {
-  return v.toFixed(2).replace(".", ",");
+  return Number(v || 0).toFixed(2).replace(".", ",");
 }
 
-/* ================= MERCADO PAGO ================= */
+// ================= MERCADO PAGO =================
 
-const mpClient = new MercadoPagoConfig({ accessToken: config.mpToken });
+const mpClient = new MercadoPagoConfig({
+  accessToken: config.mpToken
+});
 const paymentClient = new Payment(mpClient);
 
-/* ================= DISCORD ================= */
+// ================= DISCORD =================
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
@@ -79,21 +80,12 @@ const client = new Client({
 let carrinhos = {};
 let pagamentos = {};
 
-/* ================= COMANDOS ================= */
+// ================= COMANDOS =================
 
 const commands = [
   new SlashCommandBuilder()
-    .setName("criar-produto")
-    .setDescription("Criar produto")
-    .addStringOption(o => o.setName("nome").setDescription("Nome").setRequired(true))
-    .addStringOption(o => o.setName("descricao").setDescription("Descrição").setRequired(true))
-    .addNumberOption(o => o.setName("preco").setDescription("Preço").setRequired(true))
-    .addIntegerOption(o => o.setName("estoque").setDescription("Estoque").setRequired(true))
-    .addStringOption(o => o.setName("link").setDescription("Link").setRequired(true)),
-
-  new SlashCommandBuilder()
     .setName("painel")
-    .setDescription("Criar painel"),
+    .setDescription("Criar painel da loja"),
 
   new SlashCommandBuilder()
     .setName("top")
@@ -103,41 +95,20 @@ const commands = [
 const rest = new REST({ version: "10" }).setToken(config.token);
 
 client.once("ready", async () => {
-  console.log("✅ Loja Final Online");
+  console.log("✅ SISTEMA FINAL ONLINE");
   await rest.put(Routes.applicationCommands(config.clientId), { body: commands });
 });
 
-/* ================= INTERAÇÕES ================= */
+// ================= INTERAÇÕES =================
 
 client.on("interactionCreate", async interaction => {
 
   try {
 
-    /* ===== COMANDOS ===== */
-
+    // ===== PAINEL =====
     if (interaction.isChatInputCommand()) {
 
       await interaction.deferReply({ ephemeral: true });
-
-      if (interaction.commandName === "criar-produto") {
-
-        if (!interaction.member.roles.cache.has(config.adminRoleId))
-          return interaction.editReply({ content: "❌ Sem permissão." });
-
-        const data = getProducts();
-
-        data.products.push({
-          id: Date.now().toString(),
-          nome: interaction.options.getString("nome"),
-          descricao: interaction.options.getString("descricao"),
-          preco: interaction.options.getNumber("preco"),
-          estoque: interaction.options.getInteger("estoque"),
-          link: interaction.options.getString("link")
-        });
-
-        saveProducts(data);
-        return interaction.editReply({ content: "✅ Produto criado!" });
-      }
 
       if (interaction.commandName === "painel") {
 
@@ -151,13 +122,10 @@ client.on("interactionCreate", async interaction => {
             .setTitle(`🛍 ${p.nome}`)
             .setDescription(
               `${p.descricao}\n\n` +
-              `━━━━━━━━━━━━━━━━━━\n` +
-              `💰 **Valor:** R$ ${formatar(p.preco)}\n` +
-              `📦 **Estoque:** ${p.estoque}\n` +
-              `━━━━━━━━━━━━━━━━━━`
+              `💰 Valor: R$ ${formatar(p.preco)}\n` +
+              `📦 Estoque: ${p.estoque}`
             )
-            .setColor("#00ff88")
-            .setFooter({ text: "Awakening Store • Entrega automática" });
+            .setColor("#00ff88");
 
           const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -172,11 +140,12 @@ client.on("interactionCreate", async interaction => {
         return interaction.editReply({ content: "✅ Painel criado!" });
       }
 
+      // ===== TOP =====
       if (interaction.commandName === "top") {
 
         const stats = getStats();
-        const ranking = stats.sales.reduce((acc, sale) => {
-          acc[sale.user] = (acc[sale.user] || 0) + sale.total;
+        const ranking = stats.sales.reduce((acc, s) => {
+          acc[s.user] = (acc[s.user] || 0) + s.total;
           return acc;
         }, {});
 
@@ -185,7 +154,7 @@ client.on("interactionCreate", async interaction => {
           .slice(0, 5);
 
         if (!sorted.length)
-          return interaction.editReply({ content: "❌ Sem vendas ainda." });
+          return interaction.editReply({ content: "❌ Sem vendas." });
 
         let desc = "";
         sorted.forEach((r, i) => {
@@ -196,15 +165,13 @@ client.on("interactionCreate", async interaction => {
       }
     }
 
-    /* ===== BOTÃO COMPRAR ===== */
-
+    // ===== BOTÃO COMPRAR =====
     if (interaction.isButton() && interaction.customId.startsWith("buy_")) {
 
       await interaction.deferReply({ ephemeral: true });
 
-      const productId = interaction.customId.replace("buy_", "");
-      const data = getProducts();
-      const produto = data.products.find(p => p.id === productId);
+      const id = interaction.customId.replace("buy_", "");
+      const produto = getProducts().products.find(p => p.id === id);
 
       const canal = await interaction.guild.channels.create({
         name: `compra-${interaction.user.username}`,
@@ -222,37 +189,88 @@ client.on("interactionCreate", async interaction => {
         userId: interaction.user.id
       };
 
-      const embed = new EmbedBuilder()
-        .setTitle("🛒 FINALIZAR COMPRA")
-        .setDescription(
-          `📦 Produto: **${produto.nome}**\n\n` +
-          `💰 Valor unitário: R$ ${formatar(produto.preco)}\n\n` +
-          `━━━━━━━━━━━━━━━━━━\n` +
-          `✏️ Clique em **Inserir Quantidade** para continuar.\n` +
-          `🔒 Ou feche o ticket.\n` +
-          `━━━━━━━━━━━━━━━━━━`
-        )
-        .setColor("#00ff88");
-
-      const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("inserir_qtd")
-          .setLabel("✏️ Inserir Quantidade")
-          .setStyle(ButtonStyle.Primary),
-
-        new ButtonBuilder()
-          .setCustomId("fechar_ticket")
-          .setLabel("🔒 Fechar Ticket")
-          .setStyle(ButtonStyle.Danger)
+      await canal.send(
+        `✅ Ticket criado para **${produto.nome}**.\nClique no botão abaixo para inserir quantidade.`,
+        {
+          components: [
+            new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId("inserir_qtd")
+                .setLabel("Inserir Quantidade")
+                .setStyle(ButtonStyle.Primary)
+            )
+          ]
+        }
       );
 
-      await canal.send({
-        content: `<@${interaction.user.id}>`,
-        embeds: [embed],
-        components: [row]
+      return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
+    }
+
+    // ===== MODAL QUANTIDADE =====
+    if (interaction.isButton() && interaction.customId === "inserir_qtd") {
+
+      const modal = new ModalBuilder()
+        .setCustomId("modal_qtd")
+        .setTitle("Quantidade");
+
+      const input = new TextInputBuilder()
+        .setCustomId("quantidade_input")
+        .setLabel("Digite a quantidade desejada")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      return interaction.showModal(modal);
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === "modal_qtd") {
+
+      await interaction.deferReply();
+
+      const qtd = parseInt(interaction.fields.getTextInputValue("quantidade_input"));
+      const carrinho = carrinhos[interaction.channel.id];
+      const produto = getProducts().products.find(p => p.id === carrinho.produtoId);
+
+      if (isNaN(qtd) || qtd <= 0 || qtd > produto.estoque)
+        return interaction.editReply({ content: "❌ Quantidade inválida." });
+
+      const total = produto.preco * qtd;
+
+      const pagamento = await paymentClient.create({
+        body: {
+          transaction_amount: total,
+          description: produto.nome,
+          payment_method_id: "pix",
+          payer: { email: "cliente@email.com" }
+        }
       });
 
-      return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
+      pagamentos[pagamento.id] = {
+        produtoId: produto.id,
+        quantidade: qtd,
+        userId: interaction.user.id,
+        canalId: interaction.channel.id,
+        total: total
+      };
+
+      const qrBase64 = pagamento.point_of_interaction.transaction_data.qr_code_base64;
+      const qrBuffer = Buffer.from(qrBase64, "base64");
+      const attachment = new AttachmentBuilder(qrBuffer, { name: "qrcode.png" });
+
+      const embed = new EmbedBuilder()
+        .setTitle("💳 PAGAMENTO VIA PIX")
+        .setDescription(
+          `💰 Valor total: R$ ${formatar(total)}\n\n` +
+          `Escaneie o QR Code abaixo.\n\n` +
+          `Código:\n\n\`\`\`\n${pagamento.point_of_interaction.transaction_data.qr_code}\n\`\`\``
+        )
+        .setImage("attachment://qrcode.png")
+        .setColor("#00ff88");
+
+      return interaction.editReply({
+        embeds: [embed],
+        files: [attachment]
+      });
     }
 
   } catch (err) {
@@ -262,7 +280,7 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-/* ================= WEBHOOK ================= */
+// ===== WEBHOOK =====
 
 const app = express();
 app.use(bodyParser.json());
