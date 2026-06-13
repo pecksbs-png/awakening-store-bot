@@ -9,11 +9,16 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
-  StringSelectMenuBuilder,
-  PermissionsBitField
+  PermissionsBitField,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  AttachmentBuilder
 } from "discord.js";
 
 import fs from "fs";
+import express from "express";
+import bodyParser from "body-parser";
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
 /* ================= CONFIG ================= */
@@ -23,7 +28,8 @@ const config = {
   clientId: process.env.CLIENT_ID,
   mpToken: process.env.MP_TOKEN,
   adminRoleId: process.env.ADMIN_ROLE_ID,
-  ticketCategoryId: process.env.TICKET_CATEGORY_ID
+  ticketCategoryId: process.env.TICKET_CATEGORY_ID,
+  logChannelId: process.env.LOG_CHANNEL_ID
 };
 
 const productsPath = "./data/products.json";
@@ -64,6 +70,7 @@ const client = new Client({
 });
 
 let carrinhos = {};
+let pagamentos = {};
 
 /* ================= COMANDOS ================= */
 
@@ -79,7 +86,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("painel")
-    .setDescription("Criar painel")
+    .setDescription("Criar painel da loja")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
@@ -136,7 +143,10 @@ client.on("interactionCreate", async interaction => {
           const embed = new EmbedBuilder()
             .setTitle(`🛍 ${p.nome}`)
             .setDescription(
-              `${p.descricao}\n\n💰 Valor: R$ ${formatar(p.preco)}\n📦 Estoque: ${p.estoque}`
+              `${p.descricao}\n\n━━━━━━━━━━━━━━━━━━\n` +
+              `💰 **Valor:** R$ ${formatar(p.preco)}\n` +
+              `📦 **Estoque:** ${p.estoque}\n` +
+              `━━━━━━━━━━━━━━━━━━`
             )
             .setColor("#00ff88");
 
@@ -154,7 +164,7 @@ client.on("interactionCreate", async interaction => {
       }
     }
 
-    /* ===== BOTÃO BUY ===== */
+    /* ===== BOTÃO COMPRAR ===== */
 
     if (interaction.isButton() && interaction.customId.startsWith("buy_")) {
 
@@ -180,55 +190,77 @@ client.on("interactionCreate", async interaction => {
 
       carrinhos[canal.id] = {
         produtoId: produto.id,
-        quantidade: 1
+        userId: interaction.user.id
       };
 
       const embed = new EmbedBuilder()
-        .setTitle("🛍 Confirme sua compra")
-        .setDescription(`Produto: **${produto.nome}**\nPreço: R$ ${formatar(produto.preco)}`)
+        .setTitle("🛒 FINALIZAR COMPRA")
+        .setDescription(
+          `📦 **Produto:** ${produto.nome}\n\n` +
+          `💰 **Preço unitário:** R$ ${formatar(produto.preco)}\n\n` +
+          `✏️ Clique em **Inserir Quantidade** para continuar.\n`
+        )
         .setColor("#00ff88");
 
-      const menu = new StringSelectMenuBuilder()
-        .setCustomId("quantidade")
-        .setPlaceholder("Selecionar quantidade")
-        .addOptions(
-          Array.from({ length: Math.min(produto.estoque, 10) }, (_, i) => ({
-            label: `${i + 1}`,
-            value: `${i + 1}`
-          }))
-        );
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("inserir_qtd")
+          .setLabel("✏️ Inserir Quantidade")
+          .setStyle(ButtonStyle.Primary),
 
-      const confirmBtn = new ButtonBuilder()
-        .setCustomId("confirmar")
-        .setLabel("✅ Confirmar Compra")
-        .setStyle(ButtonStyle.Primary);
+        new ButtonBuilder()
+          .setCustomId("fechar_ticket")
+          .setLabel("🔒 Fechar Ticket")
+          .setStyle(ButtonStyle.Danger)
+      );
 
       await canal.send({
         content: `<@${interaction.user.id}>`,
         embeds: [embed],
-        components: [
-          new ActionRowBuilder().addComponents(menu),
-          new ActionRowBuilder().addComponents(confirmBtn)
-        ]
+        components: [row]
       });
 
       return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
     }
 
-    /* ===== CONFIRMAR ===== */
+    /* ===== MODAL QUANTIDADE ===== */
 
-    if (interaction.isButton() && interaction.customId === "confirmar") {
+    if (interaction.isButton() && interaction.customId === "inserir_qtd") {
+
+      const modal = new ModalBuilder()
+        .setCustomId("modal_qtd")
+        .setTitle("Digite a quantidade");
+
+      const input = new TextInputBuilder()
+        .setCustomId("quantidade_input")
+        .setLabel("Escreva a quantidade de produtos")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+
+      return interaction.showModal(modal);
+    }
+
+    /* ===== RECEBER QUANTIDADE ===== */
+
+    if (interaction.isModalSubmit() && interaction.customId === "modal_qtd") {
 
       await interaction.deferReply();
 
-      const carrinho = carrinhos[interaction.channel.id];
-      if (!carrinho)
-        return interaction.editReply({ content: "❌ Carrinho não encontrado." });
+      const qtd = parseInt(interaction.fields.getTextInputValue("quantidade_input"));
 
+      if (isNaN(qtd) || qtd <= 0)
+        return interaction.editReply({ content: "❌ Quantidade inválida." });
+
+      const carrinho = carrinhos[interaction.channel.id];
       const data = getProducts();
       const produto = data.products.find(p => p.id === carrinho.produtoId);
 
-      const total = produto.preco * carrinho.quantidade;
+      if (qtd > produto.estoque)
+        return interaction.editReply({ content: "❌ Estoque insuficiente." });
+
+      const total = produto.preco * qtd;
 
       const pagamento = await paymentClient.create({
         body: {
@@ -239,21 +271,49 @@ client.on("interactionCreate", async interaction => {
         }
       });
 
+      const qrBase64 = pagamento.point_of_interaction.transaction_data.qr_code_base64;
+      const qrBuffer = Buffer.from(qrBase64, "base64");
+      const attachment = new AttachmentBuilder(qrBuffer, { name: "qrcode.png" });
+
+      const embed = new EmbedBuilder()
+        .setTitle("💳 PAGAMENTO VIA PIX")
+        .setDescription(
+          `💰 Valor total: R$ ${formatar(total)}\n\n` +
+          `🟢 PASSO A PASSO\n\n` +
+          `🟢 Abra seu banco\n` +
+          `🟢 Vá em Pix\n` +
+          `🟢 Escaneie o QR Code\n` +
+          `🟢 Confirme o pagamento\n\n` +
+          `📋 Código copia e cola:\n\n` +
+          `\`\`\`\n${pagamento.point_of_interaction.transaction_data.qr_code}\n\`\`\``
+        )
+        .setImage("attachment://qrcode.png")
+        .setColor("#00ff88");
+
       return interaction.editReply({
-        content:
-          `💳 PAGAMENTO GERADO\n\n` +
-          `Valor: R$ ${formatar(total)}\n\n` +
-          `Copie o código abaixo:\n\n` +
-          `${pagamento.point_of_interaction.transaction_data.qr_code}`
+        embeds: [embed],
+        files: [attachment]
       });
     }
 
+    /* ===== FECHAR TICKET ===== */
+
+    if (interaction.isButton() && interaction.customId === "fechar_ticket") {
+      await interaction.channel.delete();
+    }
+
   } catch (err) {
-    console.error(err);
+    console.error("ERRO:", err);
     if (!interaction.replied)
       interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
   }
-
 });
+
+/* ================= WEB SERVER ================= */
+
+const app = express();
+app.use(bodyParser.json());
+app.post("/webhook", (req, res) => res.sendStatus(200));
+app.listen(3000);
 
 client.login(config.token);
