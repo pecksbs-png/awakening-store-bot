@@ -9,6 +9,8 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
+  AttachmentBuilder,
+  StringSelectMenuBuilder,
   PermissionsBitField
 } from "discord.js";
 
@@ -77,12 +79,12 @@ let pagamentos = {};
 const commands = [
   new SlashCommandBuilder()
     .setName("criar-produto")
-    .setDescription("Criar novo produto")
+    .setDescription("Criar produto profissional")
     .addStringOption(o =>
       o.setName("nome").setDescription("Nome do produto").setRequired(true)
     )
     .addStringOption(o =>
-      o.setName("descricao").setDescription("Descrição do produto").setRequired(true)
+      o.setName("descricao").setDescription("Descrição completa").setRequired(true)
     )
     .addNumberOption(o =>
       o.setName("preco").setDescription("Preço").setRequired(true)
@@ -96,7 +98,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("painel")
-    .setDescription("Criar painel da loja")
+    .setDescription("Criar painel profissional")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(config.token);
@@ -120,9 +122,9 @@ client.on("interactionCreate", async interaction => {
 
     if (interaction.isChatInputCommand()) {
 
-      if (interaction.commandName === "criar-produto") {
+      await interaction.deferReply({ ephemeral: true });
 
-        await interaction.deferReply({ ephemeral: true });
+      if (interaction.commandName === "criar-produto") {
 
         if (!interaction.member.roles.cache.has(config.adminRoleId))
           return interaction.editReply({ content: "❌ Sem permissão." });
@@ -141,19 +143,17 @@ client.on("interactionCreate", async interaction => {
         data.products.push(produto);
         saveProducts(data);
 
-        return interaction.editReply({ content: "✅ Produto criado com sucesso!" });
+        return interaction.editReply({ content: "✅ Produto criado!" });
       }
 
       /* ========= PAINEL ========= */
 
       if (interaction.commandName === "painel") {
 
-        await interaction.deferReply({ ephemeral: true });
-
         const data = getProducts();
 
         if (data.products.length === 0)
-          return interaction.editReply({ content: "❌ Nenhum produto cadastrado." });
+          return interaction.editReply({ content: "❌ Sem produtos." });
 
         for (const p of data.products) {
 
@@ -182,16 +182,99 @@ client.on("interactionCreate", async interaction => {
       }
     }
 
+    /* ========= BOTÃO COMPRAR ========= */
+
+    if (interaction.isButton() && interaction.customId.startsWith("buy_")) {
+
+      await interaction.deferReply({ ephemeral: true });
+
+      const productId = interaction.customId.replace("buy_", "");
+      const data = getProducts();
+      const produto = data.products.find(p => p.id === productId);
+
+      if (!produto)
+        return interaction.editReply({ content: "❌ Produto não encontrado." });
+
+      let canal;
+
+      try {
+        canal = await interaction.guild.channels.create({
+          name: `compra-${interaction.user.username}`,
+          type: ChannelType.GuildText,
+          parent: config.ticketCategoryId || null,
+          permissionOverwrites: [
+            {
+              id: interaction.guild.id,
+              deny: [PermissionsBitField.Flags.ViewChannel]
+            },
+            {
+              id: interaction.user.id,
+              allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
+            },
+            {
+              id: config.adminRoleId,
+              allow: [PermissionsBitField.Flags.ViewChannel]
+            }
+          ]
+        });
+      } catch (err) {
+        return interaction.editReply({
+          content: "❌ Erro ao criar ticket. Verifique permissões."
+        });
+      }
+
+      carrinhos[canal.id] = {
+        userId: interaction.user.id,
+        produtoId: produto.id,
+        quantidade: 1
+      };
+
+      const embed = new EmbedBuilder()
+        .setTitle("🛍 Confirme sua Compra")
+        .setDescription(
+          `📦 Produto: **${produto.nome}**\n\n` +
+          `💰 Preço unitário: R$${formatar(produto.preco)}\n` +
+          `📦 Estoque: ${produto.estoque}\n\n` +
+          `Escolha a quantidade abaixo.`
+        )
+        .setColor("#00ff88");
+
+      const menu = new StringSelectMenuBuilder()
+        .setCustomId("quantidade")
+        .setPlaceholder("Selecionar quantidade")
+        .addOptions(
+          Array.from({ length: Math.min(produto.estoque, 10) }, (_, i) => ({
+            label: `${i + 1}`,
+            value: `${i + 1}`
+          }))
+        );
+
+      const confirmBtn = new ButtonBuilder()
+        .setCustomId("confirmar")
+        .setLabel("✅ Confirmar Compra")
+        .setStyle(ButtonStyle.Primary);
+
+      await canal.send({
+        content: `<@${interaction.user.id}>`,
+        embeds: [embed],
+        components: [
+          new ActionRowBuilder().addComponents(menu),
+          new ActionRowBuilder().addComponents(confirmBtn)
+        ]
+      });
+
+      return interaction.editReply({ content: `✅ Ticket criado: ${canal}` });
+    }
+
   } catch (err) {
-    console.error("ERRO:", err);
+    console.error("ERRO GLOBAL:", err);
 
     if (interaction.deferred || interaction.replied) {
-      return interaction.editReply({ content: "❌ Ocorreu um erro interno." });
+      return interaction.editReply({ content: "❌ Erro interno." });
     } else {
-      return interaction.reply({ content: "❌ Ocorreu um erro interno.", ephemeral: true });
+      return interaction.reply({ content: "❌ Erro interno.", ephemeral: true });
     }
   }
-
 });
 
 /* ================= WEBHOOK ================= */
