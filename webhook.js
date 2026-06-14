@@ -53,7 +53,9 @@ export default function startWebhook(client) {
         const data = getProducts();
         const produto = data.products.find(p => p.id === info.produtoId);
 
-        produto.estoque -= info.quantidade;
+   if (produto.estoque !== "INF") {
+  produto.estoque -= info.quantidade;
+}
         saveProducts(data);
 
         const stats = getStats();
@@ -64,9 +66,7 @@ export default function startWebhook(client) {
         saveStats(stats);
 
         const user = await client.users.fetch(info.userId);
-       await user.send(
-  `✅ Pagamento aprovado!\n\nAqui está sua entrega:\n\n\`\`\`\n${produto.entrega}\n\`\`\``
-);
+        await user.send(`✅ Pagamento aprovado!\nProduto:\n${produto.link}`);
 
         const canal = await client.channels.fetch(info.canalId);
         await canal.send("✅ Pagamento confirmado! Ticket será fechado em 10s.");

@@ -155,7 +155,11 @@ export default {
     const carrinho = carrinhos[interaction.channel.id];
     const produto = getProducts().products.find(p => p.id === carrinho.produtoId);
 
-    if (isNaN(qtd) || qtd <= 0 || qtd > produto.estoque)
+    if (
+  isNaN(qtd) ||
+  qtd <= 0 ||
+  (produto.estoque !== "INF" && qtd > produto.estoque)
+)
       return interaction.editReply({ content: "❌ Quantidade inválida." });
 
     const total = produto.preco * qtd;

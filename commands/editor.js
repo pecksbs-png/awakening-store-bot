@@ -166,10 +166,17 @@ export default {
       const campo = interaction.customId.replace("modal_", "");
       const valor = interaction.fields.getTextInputValue("valor_input");
 
-      editorState[userId][campo] =
-        campo === "preco" || campo === "estoque"
-          ? Number(valor)
-          : valor;
+      if (campo === "preco") {
+  editorState[userId][campo] = Number(valor);
+} 
+else if (campo === "estoque") {
+  editorState[userId][campo] = valor.toUpperCase() === "INF"
+    ? "INF"
+    : Number(valor);
+} 
+else {
+  editorState[userId][campo] = valor;
+}
 
       return interaction.reply({
         embeds: [gerarEmbed(userId)],

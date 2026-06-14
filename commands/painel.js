@@ -40,7 +40,7 @@ function gerarEmbedProduto(p) {
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       `📦 **DESCRIÇÃO:**\n${p.descricao}\n\n` +
       `💰 **VALOR:** R$ ${formatar(p.preco)}\n` +
-      `📦 **ESTOQUE:** ${p.estoque}` +
+      `📦 ESTOQUE: ${p.estoque === "INF" ? "♾ Infinito" : p.estoque}` +
       `${alertaEstoque}\n\n` +
       `⭐ **AVALIAÇÃO:** ⭐⭐⭐⭐⭐\n` +
       `🚀 Entrega automática\n` +
@@ -78,7 +78,7 @@ export default {
           .setCustomId(`buy_${p.id}`)
           .setLabel("🛒 Comprar")
           .setStyle(ButtonStyle.Success)
-          .setDisabled(p.estoque === 0)
+         .setDisabled(p.estoque !== "INF" && p.estoque <= 0)
       );
 
       await interaction.channel.send({
