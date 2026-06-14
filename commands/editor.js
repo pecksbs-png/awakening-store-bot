@@ -44,7 +44,7 @@ function gerarEmbed(userId) {
       `📦 **DESCRIÇÃO:**\n${p.descricao}\n\n` +
       `💰 **VALOR:** R$ ${formatar(p.preco)}\n` +
       `📦 **ESTOQUE:** ${p.estoque}\n\n` +
-      `🔗 **LINK:**\n${p.link}\n` +
+      `🔗 **📦 ENTREGA:\n${p.entrega}\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━`
     )
     .setColor("#9b00ff")
@@ -61,7 +61,7 @@ function gerarBotoes() {
     new ButtonBuilder().setCustomId("editar_descricao").setLabel("📝 Descrição").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("editar_preco").setLabel("💰 Preço").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("editar_estoque").setLabel("📦 Estoque").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("editar_link").setLabel("🔗 Link").setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId("editar_entrega").setLabel("📦 Entrega")
   );
 
   const row2 = new ActionRowBuilder().addComponents(
@@ -89,7 +89,7 @@ export default {
       descricao: "Descrição do produto...",
       preco: 0,
       estoque: 0,
-      link: "https://link.com"
+      entrega: "Conteúdo da entrega..."
     };
 
     return interaction.editReply({
