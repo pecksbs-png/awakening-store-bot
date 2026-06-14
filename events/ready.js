@@ -1,7 +1,9 @@
 import { REST, Routes } from "discord.js";
 import fs from "fs";
-const config = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
-
+const config = {
+  token: process.env.DISCORD_TOKEN,
+  clientId: process.env.CLIENT_ID
+};
 export default {
   name: "ready",
   once: true,

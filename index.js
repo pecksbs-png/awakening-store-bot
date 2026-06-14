@@ -2,7 +2,14 @@ import { Client, GatewayIntentBits, Collection } from "discord.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-const config = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
+const config = {
+  token: process.env.DISCORD_TOKEN,
+  clientId: process.env.CLIENT_ID,
+  adminRoleId: process.env.ADMIN_ROLE_ID,
+  mpToken: process.env.MP_TOKEN,
+  ticketCategoryId: process.env.TICKET_CATEGORY_ID,
+  logChannelId: process.env.LOG_CHANNEL_ID
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
