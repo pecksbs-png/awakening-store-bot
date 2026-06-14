@@ -40,8 +40,6 @@ function gerarEmbed(userId) {
   return new EmbedBuilder()
     .setTitle(`🛍 ${p.nome.toUpperCase()}`)
     .setDescription(
-      `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-      `✨ **PRODUTO PREMIUM**\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       `📦 **DESCRIÇÃO:**\n${p.descricao}\n\n` +
       `💰 **VALOR:** R$ ${formatar(p.preco)}\n` +
