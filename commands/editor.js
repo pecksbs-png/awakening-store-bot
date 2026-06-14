@@ -61,7 +61,7 @@ function gerarBotoes() {
     new ButtonBuilder().setCustomId("editar_descricao").setLabel("📝 Descrição").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("editar_preco").setLabel("💰 Preço").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("editar_estoque").setLabel("📦 Estoque").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("editar_entrega").setLabel("📦 Entrega")
+    new ButtonBuilder().setCustomId("editar_entrega").setLabel("📦 Entrega").setStyle(ButtonStyle.Secondary)
   );
 
   const row2 = new ActionRowBuilder().addComponents(
