@@ -23,12 +23,27 @@ export default {
     });
 
     try {
+
+      // Limpa comandos globais
+      await rest.put(
+        Routes.applicationCommands(config.clientId),
+        { body: [] }
+      );
+
+      // Limpa comandos da guild
+      await rest.put(
+        Routes.applicationGuildCommands(config.clientId, guild.id),
+        { body: [] }
+      );
+
+      // Registra novos comandos
       await rest.put(
         Routes.applicationGuildCommands(config.clientId, guild.id),
         { body: commands }
       );
 
       console.log(`✅ ${commands.length} comandos registrados em ${guild.name}`);
+
     } catch (err) {
       console.error("❌ Erro ao registrar comandos:", err);
     }
