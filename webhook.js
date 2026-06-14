@@ -66,7 +66,9 @@ export default function startWebhook(client) {
         saveStats(stats);
 
         const user = await client.users.fetch(info.userId);
-        await user.send(`✅ Pagamento aprovado!\nProduto:\n${produto.link}`);
+        await user.send(
+  `✅ Pagamento aprovado!\n\n📦 Sua entrega:\n\n\`\`\`\n${produto.entrega || produto.link || "Entrega indisponível"}\n\`\`\``
+);
 
         const canal = await client.channels.fetch(info.canalId);
         await canal.send("✅ Pagamento confirmado! Ticket será fechado em 10s.");
