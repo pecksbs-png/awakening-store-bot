@@ -43,7 +43,7 @@ function gerarEmbed(userId) {
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
       `📦 **DESCRIÇÃO:**\n${p.descricao}\n\n` +
       `💰 **VALOR:** R$ ${formatar(p.preco)}\n` +
-      `📦 **ESTOQUE:** ${p.estoque}\n\n` +
+      `📦 **ESTOQUE:** ${p.estoque === "INF" ? "♾ Infinito" : p.estoque}\n` +
       `🔗 **📦 ENTREGA:\n${p.entrega}\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━`
     )
