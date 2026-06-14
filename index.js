@@ -2,7 +2,6 @@ import { Client, GatewayIntentBits, Collection } from "discord.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import fs from "fs";
 const config = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
 
 const __filename = fileURLToPath(import.meta.url);
